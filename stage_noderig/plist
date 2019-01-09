@@ -1,0 +1,5 @@
+/etc/noderig/config.yaml
+/usr/bin/noderig
+/etc/newsyslog.conf.d/noderig
+/etc/rc.d/noderig
+/etc/rc.conf.d/noderig

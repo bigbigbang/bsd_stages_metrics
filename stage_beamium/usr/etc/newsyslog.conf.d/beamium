@@ -1,2 +1,0 @@
-# logfilename          [owner:group]    mode count size when  flags [/pid_file] [sig_num]
-/var/log/beamium/beamium.log            600  7     100  *     J

@@ -1,0 +1,107 @@
+#!/bin/sh
+#
+#
+# PROVIDE: noderig
+# REQUIRE: DAEMON
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf to enable this service:
+#
+# noderig_enable:       Set to NO by default. Set it to YES to enable it.
+# noderig conf: 	Directory where noderig configuration file 
+#	  		  is stored
+# noderig_user:         The user account noderig daemon runs as what
+#                         you want it to be.
+#                         Default: noderig
+# noderig_group:        The group account noderig daemon runs as what
+#                         you want it to be.
+#                         Default: noderig
+
+. /etc/rc.subr
+
+name=noderig
+rcvar=noderig_enable
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+
+load_rc_config $name
+
+: ${noderig_enable:=NO}
+: ${noderig_conf=/etc/noderig/config.yaml}
+: ${noderig_user:=noderig}
+noderig_group=${noderig_group:-$noderig_user}
+
+command=/usr/bin/noderig
+pidfile=/var/run/noderig.pid
+noderig_flags="${noderig_conf:+--config ${noderig_conf}}"
+
+
+get_pid() {
+    cat "$pidfile"
+}
+
+is_running() {
+    [ -f "$pidfile" ] && ps `get_pid` > /dev/null 2>&1
+}
+
+noderig_start() {
+    if is_running; then
+        echo "Already started"
+    else
+        echo 'Starting noderig'
+	/usr/sbin/daemon -cf -p ${pidfile} -u ${noderig_user} ${command} ${noderig_flags}
+
+        if ! is_running; then
+            echo "Unable to start, see log"
+            exit 1
+        fi
+    fi
+    echo "Started"
+}
+
+noderig_stop() {
+    if is_running; then
+        echo -n "Stopping noderig.."
+        kill -2 `get_pid`
+        for i in {1..10}
+        do
+            if ! is_running; then
+                break
+            fi
+
+            echo -n "."
+            sleep 1
+        done
+        echo
+
+        if is_running; then
+            echo "Not stopped; may still be shutting down or shutdown may have failed"
+            exit 1
+        else
+            echo "Stopped"
+            if [ -f "$pidfile" ]; then
+                rm "$pidfile"
+            fi
+        fi
+    else
+        echo "Not running"
+    fi
+}
+
+
+noderig_status() {
+    if is_running; then
+        echo "Running"
+    else
+        echo "Stopped"
+        exit 1
+    fi
+}
+
+noderig_cleanup() {
+    [ -f ${pidfile} ] && rm ${pidfile}
+}
+
+run_rc_command $1
+

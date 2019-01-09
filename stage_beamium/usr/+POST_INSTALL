@@ -1,5 +1,0 @@
-#!/bin/bash
-chown -R beamium:beamium /opt/beamium
-chown -R beamium:beamium /var/log/beamium/
-chmod +x /etc/rc.d/beamium
-echo "don't forget to start service by typing: service beamium start"

@@ -1,7 +1,0 @@
-#!/bin/bash
-rmuser -y beamium
-rm -rf /opt/beamium
-rm -rf /var/log/beamium
-rm -rf /var/run/beamium.pid
-rm -rf /etc/rc.conf.d/beamium
-rm -rf /etc/rc.d/beamium

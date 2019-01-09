@@ -1,0 +1,8 @@
+name: noderig
+version: "2.3.1_1"
+origin: sysutils/noderig
+comment: "Export OS stats as Sensision Metrics"
+desc: "Noderig collect OS metrics and expose them through a Sensision HTTP endpoint. Each collector is easily configurable, thanks to a simple level cursor"
+maintainer: alexis.autret@corp.ovh.com
+www: https://github.com/ovh/noderig
+prefix: /

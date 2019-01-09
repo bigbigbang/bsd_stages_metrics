@@ -1,0 +1,4 @@
+#!/bin/bash
+chown -R noderig:noderig /var/log/noderig/
+chmod +x /etc/rc.d/noderig
+echo "don't forget to start service by typing: service noderig start"

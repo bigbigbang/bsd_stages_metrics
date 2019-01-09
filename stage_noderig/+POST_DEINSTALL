@@ -1,0 +1,6 @@
+#!/bin/bash
+rmuser -y noderig
+rm -rf /var/log/noderig
+rm -rf /var/run/noderig.pid
+rm -rf /etc/rc.conf.d/noderig
+rm -rf /etc/rc.d/noderig
