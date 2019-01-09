@@ -1,0 +1,5 @@
+beamium_enable="YES"
+beamium_conf="/etc/beamium/config.yaml"
+beamium_user="beamium"
+beamium_group="beamium"
+beamium_flags="-c /etc/beamium/config.yaml"

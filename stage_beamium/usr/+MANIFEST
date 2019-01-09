@@ -1,0 +1,8 @@
+name: beamium
+version: "1.9.3_1"
+origin: sysutils/beamium
+comment: "Prometheus to Warp10 metrics forwarder"
+desc: "Prometheus to Warp10 metrics forwarder"
+maintainer: alexis.autret@corp.ovh.com
+www: https://github.com/ovh/beamium
+prefix: /
