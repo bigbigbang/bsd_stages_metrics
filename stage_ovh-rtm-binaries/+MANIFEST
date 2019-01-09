@@ -1,0 +1,13 @@
+name: ovh-rtm-binaries
+version: "1.0.0-1"
+origin: sysutils/ovh-rtm-binaries
+comment: "ovh real time monitoring. This package provide OVH Real Times Monitoring scripts"
+desc: "ovh real time monitoring. This package provide OVH Real Times Monitoring scripts"
+maintainer: alexis.autret@corp.ovh.com
+www: https://www.ovh.com/fr/data-platforms/metrics/
+prefix: /
+deps:
+ smartmontools
+ dmidecode
+ sg3_utils
+ xsysstats 

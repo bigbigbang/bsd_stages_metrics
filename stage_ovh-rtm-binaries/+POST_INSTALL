@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Check if vm or physical server
+DMIRESULT=`dmidecode -s system-manufacturer`
+if ! echo ${DMIRESULT} | grep -iqE "(vmware|openstack|xen|qemu|virtualbox)"; then
+    # install lsiutil
+    echo "Checking for lsiutil ..."
+    LSIUTIL=`which lsiutil 2>/dev/null`
+    LSIUTIL_LINK="ftp://ftp.ovh.net/made-in-ovh/dedie/lsiutil"
+    if [ -z "$LSIUTIL" ]; then
+      if [ -n "$LSPCI" -a "$LSPCI" ]; then
+        PCIONBOARD=`$LSPCI -d 1000:`
+      fi
+      if [ -n "$PCIONBOARD" ]; then
+        echo "Installing lsi-util ...";
+        wget $LSIUTIL_LINK -O /usr/local/rtm/bin/lsiutil
+        chmod 700 /usr/local/bin/lsiutil
+      fi
+    fi
+
+    echo "Checking for mpt-status ..."
+    if [ -z "$MPTSTATUS" ]; then
+      MPTADAPTERS=`cat /var/log/dmesg /var/log/boot.msg 2>/dev/null | grep "MPT" | grep "mptbase:" | cut -f2 -d" "`
+      if [ -n "$MPTADAPTERS" -a "$MPTADAPTERS" != "0" ]; then
+        echo "Installing mpt-status ...";
+        wget ftp://ftp.ovh.net/made-in-ovh/dedie/mpt-status -O /usr/sbin/mpt-status
+        chmod 700 /usr/sbin/mpt-status
+      fi
+    fi
+fi
