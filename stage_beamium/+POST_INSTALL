@@ -2,4 +2,21 @@
 chown -R beamium:beamium /opt/beamium
 chown -R beamium:beamium /var/log/beamium/
 chmod +x /etc/rc.d/beamium
+touch /etc/beamium/config.yaml
+cat << EOF > /etc/beamium/config.yaml
+scrapers:
+  scraper1:
+    url: http://127.0.0.1:9100/metrics
+    period: 10000
+
+sinks:
+  sink1:
+    url: WARP10_ENDPOINT
+    token: WARP10_TOKEN
+
+parameters:
+  source-dir: /opt/beamium/sources
+  sink-dir: /opt/beamium/sinks
+log-file: /var/log/beamium/beamium.log
+EOF
 echo "don't forget to start service by typing: service beamium start"

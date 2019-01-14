@@ -1,0 +1,22 @@
+name: ovh-rtm-metrics-toolkit
+version: "1.0.0_1"
+origin: sysutils/ovh-rtm-metrics-toolkit
+comment: "OVH real time monitoring (metapackage)."
+desc: "OVH real time monitoring (metapackage). This package depends on the default implementation of the client binaries and the additional tools noderig and beamium."
+maintainer: alexis.autret@corp.ovh.com
+www: https://docs.ovh.com/gb/en/dedicated/install-rtm/
+prefix: /
+deps: {
+  ovh-rtm-binaries: {
+      "version" : "*",
+      "origin" : "sysutils/ovh-rtm-binaries"
+   },
+   "noderig" : {
+      "version"   : ">2.3.0",
+      "origin" : "sysutils/dmidecode"
+   },
+   "beamium" : {
+      "version"   : ">1.7.0",
+      "origin" : "sysutils/beamium"
+   },
+}

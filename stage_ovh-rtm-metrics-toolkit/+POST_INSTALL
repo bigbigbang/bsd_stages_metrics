@@ -1,0 +1,228 @@
+#!/bin/bash
+
+parse_yaml()
+{
+   local prefix=$2
+   local s='[[:space:]]*' w='[a-zA-Z0-9_]*' fs=$(echo @|tr @ '\034')
+   sed -ne "s|^\($s\):|\1|" \
+        -e "s|^\($s\)\($w\)$s:$s[\"']\(.*\)[\"']$s\$|\1$fs\2$fs\3|p" \
+        -e "s|^\($s\)\($w\)$s:$s\(.*\)$s\$|\1$fs\2$fs\3|p"  $1 |
+   awk -F$fs '{
+      indent = length($1)/2;
+      vname[indent] = $2;
+      for (i in vname) {if (i > indent) {delete vname[i]}}
+      if (length($3) > 0) {
+         vn=""; for (i=0; i<indent; i++) {vn=(vn)(vname[i])("_")}
+         printf("%s%s%s=\"%s\"\n", "'$prefix'",vn, $2, $3);
+      }
+   }'
+}
+
+echo "Checking and removing legacy rtm crontab"
+DIR="\/usr\/local\/rtm"
+RTM_SH="$DIR\/bin\/rtm"
+
+# treat dillo cron in a special way
+is_dillo=`crond --version 2>/dev/null | grep dcron`
+if [ -e /etc/slackware-version -a ! -z "$is_dillo" ]; then
+    CRONTAB=/var/spool/cron/crontabs/root
+    CRONTABLINE='*/1 * * * * '$RTM_SH' '$minute' > /dev/null 2> /dev/null'
+else
+    CRONTAB=/etc/crontab
+    CRONTABLINE='*/1 * * * * root '$RTM_SH' '$minute' > /dev/null 2> /dev/null'
+fi
+if [ ! -z "`cat $CRONTAB | grep \"$RTM_SH\"`" ]; then
+    sed -i "/${RTM_SH}/d" $CRONTAB
+fi
+
+cat << EOF > /etc/beamium/README_RTM
+Beamium can be configured manually to send data to RTM
+
+RTM Scrapers configuration:
+-----------------------------
+
+## noderig endpoint to fetch
+scrapers:
+  noderig:
+    url: http://127.0.0.1:9100/metrics
+    format: sensision
+    period: 60000
+
+
+RTM Sinks configuration:
+-----------------------------
+
+## Warp10 platform to send data
+sinks:
+  metrics:
+    url: https://rtm.ovh.net/
+    token: bnMzMDc1ODk5LmlwLTIxNy0xODItMTk1LmV1MTUzODM4MjcyNQo
+    size: 1000000
+    selector: (os|rtm).*
+    ttl: 60
+
+
+RTM Labels
+-----------------------------
+
+labels:
+  host: <your server hostname>
+
+
+RTM parameters configuration
+-----------------------------
+
+parameters: # Parameters definitions (Optional)
+  source-dir: /opt/beamium/sources   # Beamer data source directory
+  sink-dir: /opt/beamium/sinks       # Beamer data sink directory
+  scan-period: 60000     # Delay(ms) between source/sink scan
+EOF
+
+echo "deploy rtm script to noderig external collector directory"
+
+# create directory
+if [ ! -d "/opt/beamium/sources" ]; then
+    mkdir -p /opt/beamium/sources
+fi
+if [ ! -d "/opt/beamium/sinks" ]; then
+    mkdir -p /opt/beamium/sinks
+fi
+if [ ! -d "/opt/noderig" ]; then
+    mkdir -p /opt/noderig
+fi
+if [ ! -d " /var/log/noderig" ]; then
+    mkdir -p /var/log/noderig
+fi
+if [ ! -d "/opt/noderig/3600" ]; then
+    mkdir -p /opt/noderig/3600/
+fi
+if [ ! -d "/opt/noderig/43200" ]; then
+    mkdir -p /opt/noderig/43200/
+fi
+
+if [ ! -f /opt/noderig/3600/rtmHourly ]; then
+    ln -s /usr/bin/rtmHourly /opt/noderig/3600/rtmHourly
+fi
+
+if [ ! -f /opt/noderig/3600/rtmRaidCheck ]; then
+    ln -s /usr/bin/rtmRaidCheck /opt/noderig/3600/rtmRaidCheck
+fi
+
+if [ ! -f /opt/noderig/43200/rtmHardware ]; then
+    ln -s /usr/bin/rtmHardware /opt/noderig/43200/rtmHardware
+fi
+
+# update noderig and beamium configuration
+
+echo "Configuring noderig"
+NODERIG_CONF=/etc/noderig/config.yaml
+
+if [ -f $NODERIG_CONF ]; then
+    cp $NODERIG_CONF /etc/noderig/config.yaml.ori
+fi
+
+cat << EOF > /etc/noderig/config.yaml
+# Find details at https://github.com/runabove/noderig
+
+cpu: 1
+mem: 1
+load: 2
+disk: 2
+net: 2
+net-opts:
+  interfaces:
+$(ls /sys/class/net | egrep "^(eth|eno|ens)[0-9]" | while read line; do echo "   - $line"; done)
+period: 60000
+collectors: /opt/noderig
+EOF
+
+chmod -R 755 /opt/noderig/
+# update noderig user to run legacy script
+sed -ie 's/RUNAS=noderig/RUNAS=root/g' /etc/init.d/noderig
+echo "noderig configuration done"
+
+/etc/init.d/noderig restart
+
+
+echo "Configuring beamium"
+BEAMIUM_CONF=/etc/beamium/config.yaml
+HOSTNAME=$(hostname)
+TIMESTAMP=$(date +"%s")
+TOKEN=$(echo "$HOSTNAME$TIMESTAMP" | base64 -w 0)
+DATE=$(date +"%Y%m%d%H%M%S")
+
+# check beamium configuration
+if [ -f $BEAMIUM_CONF ]; then
+    # detect if beamium already have sinks
+    PARSEYAML=$(parse_yaml $BEAMIUM_CONF)
+    SINSKSURLCOUNT=$(echo "$PARSEYAML" | grep -E "sinks_.*_url" | wc -l)
+
+    if [ $SINSKSURLCOUNT -gt 1 ];then
+        echo "beamium have already configured sinks, please read README_RTM to add rtm sinks for beamium"
+         exit 0
+    fi
+
+    if echo "$PARSEYAML" | grep -c --quiet "sinks_sink1_url=\"WARP10_ENDPOINT\"";then
+         echo "beamium have no sinks"
+    elif echo "$PARSEYAML" | grep -c --quiet "sinks_metrics_url=\"https:\/\/rtm.ovh.net\"";then
+         echo "RTM sinks already installed, update it"
+    else
+        echo "beamium have already configured sinks, please read README_RTM to add rtm sinks for beamium"
+        exit 0
+    fi
+    cp $BEAMIUM_CONF $BEAMIUM_CONF.$DATE
+fi
+
+cat << EOF > /etc/beamium/config.yaml
+## noderig endpoint to fetch
+scrapers:
+  noderig:
+    url: http://127.0.0.1:9100/metrics
+    format: sensision
+    period: 60000
+
+## Warp10 platform to send data
+sinks:
+  rtm:
+    url: https://rtm.ovh.net/
+    token: #token
+    size: 1000000
+    selector: (os|rtm).*
+    ttl: 60
+
+labels:
+  host: #hostname
+
+parameters: # Parameters definitions (Optional)
+  source-dir: /opt/beamium/sources   # Beamer data source directory
+  sink-dir: /opt/beamium/sinks       # Beamer data sink directory
+  scan-period: 60000     # Delay(ms) between source/sink scan
+  log-file: /var/log/beamium/beamium.log # Log file
+  log-level: 1          # Log level
+  router-parallel: 1    # Routing threads
+  backoff:              # Backoff configuration
+    initial: 30000ms      # Initial interval
+    max: 1m               # Max interval
+    multiplier: 1.5       # Interval multiplier
+    randomization: 0.3    # Randomization factor - delay = interval * 0.3
+EOF
+
+sed -i -e "s/#token/$TOKEN/g" $BEAMIUM_CONF
+sed -i -e "s/#hostname/$HOSTNAME/g" $BEAMIUM_CONF
+echo "beamium configuration done"
+
+/etc/init.d/beamium restart
+
+echo "Init RTM ..."
+# Lauch each legacy script for init server datas
+SCRIPT_DIR="/opt/noderig"
+OUTPUT_FILE="/opt/beamium/sources/opendata-init-document.metrics"
+> $OUTPUT_FILE
+
+for script in $SCRIPT_DIR/*/*
+do
+    $script | sed -n 's%^{\"metric\":\"\([a-z].*\)\",\"timestamp\":\([0-9].*\),\"value\":\"\(.*\)\"}$%\2000000// \1{} \x27\3\x27%p' >> $OUTPUT_FILE
+done
+
+chown beamium:beamium $OUTPUT_FILE
+

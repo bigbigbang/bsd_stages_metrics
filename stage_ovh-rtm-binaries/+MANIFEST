@@ -6,34 +6,33 @@ desc: "ovh real time monitoring. This package provide OVH Real Times Monitoring 
 maintainer: alexis.autret@corp.ovh.com
 www: https://www.ovh.com/fr/data-platforms/metrics/
 prefix: /
-deps:
-{
-   "smartmontools" : {
-      "version"	: "6.5_2",
-      "origin" : "sysutils/smartmontools"
-   },
-   "dmidecode" : {
-      "version"	: "3.1_1",
-      "origin" : "sysutils/dmidecode"
-   },
-   "sg3_utils" : {
-      "version"	: "1.42",
-      "origin" : "sysutils/sg3_utils"
-   },
-   "p5-Unix-Uptime" : {
-      "version"	: "0.3701_1,1",
-      "origin" : "devel/p5-Unix-Uptime"
-   },
-   "p5-Sys-Info" : {
-      "version"	: "0.78_1",
-      "origin" : "devel/p5-Sys-Info"
-   },
-   "p5-Sys-MemInfo" : {
-      "version"	: "0.91_1",
-      "origin" : "devel/p5-Sys-MemInfo"
-   },
-   "pciutils" : {
-      "version"	: "3.5.4",
-      "origin" : "sysutils/pciutils"
-   },
+"deps": {
+    smartmontools: {
+       "version" : "6.5_2",
+       "origin" : "sysutils/smartmontools"
+    },
+    "dmidecode" : {
+       "version"   : "3.1_1",
+       "origin" : "sysutils/dmidecode"
+    },
+    "sg3_utils" : {
+       "version": "*",
+       "origin": "*"
+     },
+    "p5-Unix-Uptime" : {
+       "version"   : "0.3701_1,1",
+       "origin" : "devel/p5-Unix-Uptime"
+    },
+    "p5-Sys-Info" : {
+       "version"   : "0.78_1",
+       "origin" : "devel/p5-Sys-Info"
+    },
+    "p5-Sys-MemInfo" : {
+       "version"   : "0.91_1",
+       "origin" : "devel/p5-Sys-MemInfo"
+    },
+    "pciutils" : {
+        "version": "*",
+        "origin": "*"
+    }
 }
