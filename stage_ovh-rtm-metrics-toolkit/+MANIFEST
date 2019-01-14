@@ -19,4 +19,8 @@ deps: {
       "version"   : ">1.7.0",
       "origin" : "sysutils/beamium"
    },
+   "base64" : {
+      "version": "*",
+      "origin": "*",
+   }
 }

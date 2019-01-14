@@ -17,6 +17,7 @@ sinks:
 parameters:
   source-dir: /opt/beamium/sources
   sink-dir: /opt/beamium/sinks
-log-file: /var/log/beamium/beamium.log
+  log-file: /var/log/beamium/beamium.log
 EOF
+
 echo "don't forget to start service by typing: service beamium start"

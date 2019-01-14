@@ -19,22 +19,9 @@ parse_yaml()
 }
 
 echo "Checking and removing legacy rtm crontab"
-DIR="\/usr\/local\/rtm"
-RTM_SH="$DIR\/bin\/rtm"
+echo "TODO" 
 
-# treat dillo cron in a special way
-is_dillo=`crond --version 2>/dev/null | grep dcron`
-if [ -e /etc/slackware-version -a ! -z "$is_dillo" ]; then
-    CRONTAB=/var/spool/cron/crontabs/root
-    CRONTABLINE='*/1 * * * * '$RTM_SH' '$minute' > /dev/null 2> /dev/null'
-else
-    CRONTAB=/etc/crontab
-    CRONTABLINE='*/1 * * * * root '$RTM_SH' '$minute' > /dev/null 2> /dev/null'
-fi
-if [ ! -z "`cat $CRONTAB | grep \"$RTM_SH\"`" ]; then
-    sed -i "/${RTM_SH}/d" $CRONTAB
-fi
-
+touch /etc/beamium/README_RTM
 cat << EOF > /etc/beamium/README_RTM
 Beamium can be configured manually to send data to RTM
 
@@ -56,7 +43,7 @@ RTM Sinks configuration:
 sinks:
   metrics:
     url: https://rtm.ovh.net/
-    token: bnMzMDc1ODk5LmlwLTIxNy0xODItMTk1LmV1MTUzODM4MjcyNQo
+    token: <token>
     size: 1000000
     selector: (os|rtm).*
     ttl: 60
@@ -131,24 +118,23 @@ disk: 2
 net: 2
 net-opts:
   interfaces:
-$(ls /sys/class/net | egrep "^(eth|eno|ens)[0-9]" | while read line; do echo "   - $line"; done)
+$(ifconfig -l ether | egrep "^(eth|eno|ens|vtnet)[0-9]" | while read line; do echo "   - $line"; done)
 period: 60000
 collectors: /opt/noderig
 EOF
 
 chmod -R 755 /opt/noderig/
 # update noderig user to run legacy script
-sed -ie 's/RUNAS=noderig/RUNAS=root/g' /etc/init.d/noderig
+sed -ie 's/noderig_user="noderig"/noderig_user="root"/g' /etc/rc.conf.d/noderig
 echo "noderig configuration done"
 
-/etc/init.d/noderig restart
-
+service noderig restart
 
 echo "Configuring beamium"
 BEAMIUM_CONF=/etc/beamium/config.yaml
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date +"%s")
-TOKEN=$(echo "$HOSTNAME$TIMESTAMP" | base64 -w 0)
+TOKEN=$(echo "$HOSTNAME$TIMESTAMP" | base64 -n )
 DATE=$(date +"%Y%m%d%H%M%S")
 
 # check beamium configuration
@@ -159,7 +145,7 @@ if [ -f $BEAMIUM_CONF ]; then
 
     if [ $SINSKSURLCOUNT -gt 1 ];then
         echo "beamium have already configured sinks, please read README_RTM to add rtm sinks for beamium"
-         exit 0
+        exit 0
     fi
 
     if echo "$PARSEYAML" | grep -c --quiet "sinks_sink1_url=\"WARP10_ENDPOINT\"";then
@@ -211,7 +197,7 @@ sed -i -e "s/#token/$TOKEN/g" $BEAMIUM_CONF
 sed -i -e "s/#hostname/$HOSTNAME/g" $BEAMIUM_CONF
 echo "beamium configuration done"
 
-/etc/init.d/beamium restart
+service beamium restart 
 
 echo "Init RTM ..."
 # Lauch each legacy script for init server datas
