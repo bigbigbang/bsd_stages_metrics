@@ -1,5 +1,3 @@
-/etc/beamium/config.yaml
-/usr/bin/beamium
-/etc/newsyslog.conf.d/beamium
-/etc/rc.d/beamium
-/etc/rc.conf.d/beamium
+/usr/bin/rtmHardware
+/usr/bin/rtmHourly
+/usr/bin/rtmRaidCheck
