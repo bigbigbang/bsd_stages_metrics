@@ -118,7 +118,7 @@ disk: 2
 net: 2
 net-opts:
   interfaces:
-$(ifconfig -l ether | egrep "^(eth|eno|ens|vtnet)[0-9]" | while read line; do echo "   - $line"; done)
+$(ifconfig -l ether | egrep "^(eth|eno|ens|vtnet|igb)[0-9]" | while read line; do echo "   - $line"; done)
 period: 60000
 collectors: /opt/noderig
 EOF
@@ -182,15 +182,8 @@ labels:
 parameters: # Parameters definitions (Optional)
   source-dir: /opt/beamium/sources   # Beamer data source directory
   sink-dir: /opt/beamium/sinks       # Beamer data sink directory
-  scan-period: 60000     # Delay(ms) between source/sink scan
   log-file: /var/log/beamium/beamium.log # Log file
   log-level: 1          # Log level
-  router-parallel: 1    # Routing threads
-  backoff:              # Backoff configuration
-    initial: 30000ms      # Initial interval
-    max: 1m               # Max interval
-    multiplier: 1.5       # Interval multiplier
-    randomization: 0.3    # Randomization factor - delay = interval * 0.3
 EOF
 
 sed -i -e "s/#token/$TOKEN/g" $BEAMIUM_CONF
