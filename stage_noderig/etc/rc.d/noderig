@@ -34,7 +34,7 @@ noderig_group=${noderig_group:-$noderig_user}
 
 command=/usr/bin/noderig
 pidfile=/var/run/noderig.pid
-noderig_flags="${noderig_conf:+--config ${noderig_conf}}"
+noderig_flags="${noderig_conf:+--config ${noderig_conf}} >> /var/log/noderig/noderig.log"
 
 
 get_pid() {

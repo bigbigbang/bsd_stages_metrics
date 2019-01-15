@@ -28,7 +28,7 @@ eval {
 
 # init server hash
 my %server = ();
-$server{'rtm.info.rtm.version'} = "#version#";
+$server{'rtm.info.rtm.version'} = "1.0.2";
 $server{'rtm.hostname'} = "Unknown";
 $server{'rtm.info.kernel.release'} = "Unknown";
 $server{'rtm.info.kernel.version'} = "Unknown";
@@ -181,6 +181,10 @@ if ($? == 0) {
     foreach my $disk (@disks) {
         if ($disk =~ /(^\w*)/) {
             my $disk = $1;
+	    if ($disk =~ /nvd/)
+	    {
+		$disk =~ s/nvd/nvme/;
+            }
             $server{'rtm.info.hdd'}{$disk}{'model'}="Unknown";
             $server{'rtm.info.hdd'}{$disk}{'capacity'}="Unknown";
             $server{'rtm.info.hdd'}{$disk}{'serial'}="Unknown";
@@ -259,6 +263,9 @@ foreach my $disk (keys %{$server{'rtm.info.hdd'}}) {
             $server{'rtm.info.hdd'}{$disk}{'smart'}{'power-on-hours'}=$1;
             next;
         }
+	if ($line =~ /.*Temperature:\s+(\d*)/) {
+            $server{'rtm.info.hdd'}{$disk}{'temperature'}=$1;
+        }
 
         if ($line =~ /Error \d+ (occurred )?at /){
             if ($line =~ /^read:.+(\d+)$/) {
@@ -270,24 +277,6 @@ foreach my $disk (keys %{$server{'rtm.info.hdd'}}) {
                 next;
             }
         }
-    }
-
-    # get hddtemp
-    if ($disk =~ /nvme/) {
-        my @hddtemp =  `nvme smart-log $diskSmart 2>/dev/null`;
-        foreach my $line (@hddtemp) {
-            if ($line =~ /^temperature\s+:\s+([0-9]+)/) {
-                $server{'rtm.info.hdd'}{$disk}{'temperature'}=$1;
-            }
-        }
-    } else {
-	# get temp using smart 
-	# @smartctl =  `smartctl -a $diskSmart 2>/dev/null`;
-        foreach my $line (@smartctl) {
-            if ($line =~ /Drive Temperature:\s+(\d*)/) {
-		$server{'rtm.info.hdd'}{$disk}{'temperature'}=$1; 
-	    }	    
-	}
     }
 
     # New way to gather stats
