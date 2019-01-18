@@ -3,4 +3,3 @@ pw groupadd -n noderig
 pw useradd noderig -g noderig -d /nonexistent -L daemon -c "Noderig user"
 mkdir -p /var/log/noderig
 chown -R noderig:noderig /var/log/noderig
-touch /var/log/noderig/noderig.log

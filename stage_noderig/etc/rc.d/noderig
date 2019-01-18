@@ -30,11 +30,12 @@ load_rc_config $name
 : ${noderig_enable:=NO}
 : ${noderig_conf=/etc/noderig/config.yaml}
 : ${noderig_user:=noderig}
+: ${log_dir:=/var/log/noderig/noderig.log}
 noderig_group=${noderig_group:-$noderig_user}
 
 command=/usr/bin/noderig
 pidfile=/var/run/noderig.pid
-noderig_flags="${noderig_conf:+--config ${noderig_conf}} >> /var/log/noderig/noderig.log"
+noderig_flags="${noderig_conf:+--config ${noderig_conf}}"
 
 
 get_pid() {
@@ -50,7 +51,7 @@ noderig_start() {
         echo "Already started"
     else
         echo 'Starting noderig'
-	/usr/sbin/daemon -cf -p ${pidfile} -u ${noderig_user} ${command} ${noderig_flags}
+	/usr/sbin/daemon -cf -p ${pidfile} -u ${noderig_user} -o ${log_dir} ${command} ${noderig_flags}
 
         if ! is_running; then
             echo "Unable to start, see log"

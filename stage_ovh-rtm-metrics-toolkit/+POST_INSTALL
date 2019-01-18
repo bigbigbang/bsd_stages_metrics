@@ -86,6 +86,9 @@ fi
 if [ ! -d "/opt/noderig/43200" ]; then
     mkdir -p /opt/noderig/43200/
 fi
+if [ ! -d "/opt/noderig/60" ]; then
+    mkdir -p /opt/noderig/60/
+fi
 
 if [ ! -f /opt/noderig/3600/rtmHourly ]; then
     ln -s /usr/bin/rtmHourly /opt/noderig/3600/rtmHourly
@@ -97,6 +100,10 @@ fi
 
 if [ ! -f /opt/noderig/43200/rtmHardware ]; then
     ln -s /usr/bin/rtmHardware /opt/noderig/43200/rtmHardware
+fi
+
+if [ ! -f /opt/noderig/60/diskUsage ]; then
+    ln -s /usr/bin/diskUsage /opt/noderig/60/diskUsage
 fi
 
 # update noderig and beamium configuration

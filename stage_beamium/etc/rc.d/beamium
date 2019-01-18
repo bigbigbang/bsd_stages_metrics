@@ -30,6 +30,7 @@ load_rc_config $name
 : ${beamium_enable:=NO}
 : ${beamium_conf=/etc/beamium/config.yaml}
 : ${beamium_user:=beamium}
+: ${beamium_log=/var/log/beamium/beamium.log}
 beamium_group=${beamium_group:-$beamium_user}
 
 command=/usr/bin/beamium
@@ -50,7 +51,7 @@ beamium_start() {
         echo "Already started"
     else
         echo 'Starting beamium'
-	/usr/sbin/daemon -cf -p ${pidfile} -u ${beamium_user} ${command} ${beamium_flags}
+	/usr/sbin/daemon -cf -p ${pidfile} -u ${beamium_user} -o ${beamium_log} ${command} ${beamium_flags}
 
         if ! is_running; then
             echo "Unable to start, see log"

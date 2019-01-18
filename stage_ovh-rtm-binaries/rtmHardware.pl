@@ -181,10 +181,6 @@ if ($? == 0) {
     foreach my $disk (@disks) {
         if ($disk =~ /(^\w*)/) {
             my $disk = $1;
-	    if ($disk =~ /nvd/)
-	    {
-		$disk =~ s/nvd/nvme/;
-            }
             $server{'rtm.info.hdd'}{$disk}{'model'}="Unknown";
             $server{'rtm.info.hdd'}{$disk}{'capacity'}="Unknown";
             $server{'rtm.info.hdd'}{$disk}{'serial'}="Unknown";
@@ -196,6 +192,10 @@ if ($? == 0) {
 # smart on all disk
 foreach my $disk (keys %{$server{'rtm.info.hdd'}}) {
     my $diskSmart = "/dev/".$disk;
+    if ($diskSmart =~ /nvd/)
+    {
+        $diskSmart =~ s/nvd/nvme/;
+    }
     my $before = time();
     my @smartctl =  `smartctl -a $diskSmart 2>/dev/null`;
     my $after = time();
@@ -263,6 +263,11 @@ foreach my $disk (keys %{$server{'rtm.info.hdd'}}) {
             $server{'rtm.info.hdd'}{$disk}{'smart'}{'power-on-hours'}=$1;
             next;
         }
+        if ($line =~ /^\s+Power On Hours*.\s+(\d+)$/) {
+	    $1 =~ s/,//;
+            $server{'rtm.info.hdd'}{$disk}{'smart'}{'power-on-hours'}=$1;
+            next;
+        }
 	if ($line =~ /.*Temperature:\s+(\d*)/) {
             $server{'rtm.info.hdd'}{$disk}{'temperature'}=$1;
         }
@@ -286,6 +291,10 @@ foreach my $disk (keys %{$server{'rtm.info.hdd'}}) {
 	if( $disk !~ /^\/dev\// )
 	{
 	    $realDisk = "/dev/$disk";
+	    if ($realDisk =~ /nvd/)
+            {
+                $realDisk =~ s/nvd/nvme/;
+            }
 	}
         my $fnret = gatherStats( smartDisk => $realDisk, sgPaths => \%globalSgPaths, linkType => $linkType );
         if(ok($fnret) and $fnret->{value})
@@ -393,6 +402,10 @@ sub ok
 sub getSectorSize {
     my %params = @_;
     my $disk = $params{disk};
+    if ($disk =~ /nvme/)
+    {
+        $disk =~ s/nvme/nvd/;
+    }
     my $cmd = "diskinfo -v $disk | tail -n +2 | grep sectorsize";
     my $sectorSize = `$cmd`;
     my $last_status = $? >> 8;
@@ -401,7 +414,7 @@ sub getSectorSize {
         return { status => 500, msg => "Error: unable to get sector size for device $disk" };
     }
     
-    if( $sectorSize =~ /(\d*)/)
+    if( $sectorSize =~ /(\d+)/)
     {
 	$sectorSize=$1;
     }
@@ -416,6 +429,10 @@ sub getSmartOverallHealthStatus
 {
     my %params = @_;
     my $smartDisk = $params{smartDisk};
+    if ($smartDisk =~ /nvd/)
+    {
+        $smartDisk =~ s/nvd/nvme/;
+    }
     my @lines = `smartctl -H $smartDisk 2>/dev/null`;
     my $last_status = $? >> 8;
     $last_status = $last_status & 7;
@@ -742,6 +759,46 @@ sub getSmartStatsATA
     }
 
 
+    ## Free BSD nvme
+    if ( my ($attr) = grep { $_->{name} eq 'Power On Hours' } @{$smartStats->{attributes}} )
+    {
+        $attr->{value} =~ /^\d*/ or return { status => 500, msg => 'Unconsistent POH counter' };
+        my $value = $attr->{value};
+        $value =~ s/,//g;
+        $powerOnHours = $value;
+    }
+    if ( my ($attr) = grep { $_->{name} eq 'Power Cycles' } @{$smartStats->{attributes}} )
+    {
+        $attr->{value} =~ /^\d*/ or return { status => 500, msg => 'Unconsistent POH counter' };
+        my $value = $attr->{value};
+        $value =~ s/,//;
+        $powerCycles = $value;
+    }
+    if ( my ($attr) = grep { $_->{name} eq 'Temperature' } @{$smartStats->{attributes}} )
+    {
+        $attr->{value} =~ /^\d*/ or return { status => 500, msg => 'Unconsistent smart temperature' };
+        my $value = $attr->{value};
+	$value =~ s/Celsius//;
+        $temperature = $value;
+    }
+    if ( my ($attr) = grep { $_->{name} eq 'Data Units Read' } @{$smartStats->{attributes}} )
+    {
+        $attr->{value} =~ /(\S+)\s\[/ or return { status => 500, msg => 'Unconsistent ATA read counter' };
+	my $value = $1;
+	$value =~ s/,//g;
+        $value = $sectorSize*$value;
+        $bytesRead = $value;
+    }
+    if ( my ($attr) = grep { $_->{name} eq 'Data Units Written' } @{$smartStats->{attributes}} )
+    {
+        $attr->{value} =~ /(\S+)\s\[/ or return { status => 500, msg => 'Unconsistent ATA write counter' };
+        my $value = $1;
+        $value =~ s/,//g;
+        $value = $sectorSize*$value;
+        $bytesWritten = $value;
+    }
+
+
     $fnret = getSataPhyErrorCounters(smartDisk => $smartDisk);
     if( ok($fnret) )
     {
@@ -796,6 +853,10 @@ sub getSmartStatsAndAttributes
 {
     my %params = @_;
     my $smartDisk = $params{smartDisk};
+    if ($smartDisk =~ /nvd/)
+    {
+        $smartDisk =~ s/nvd/nvme/;
+    }
 
     my $cmd = "timeout 15 smartctl -l devstat -A ".$smartDisk." 2>/dev/null";
     my @smartctl =  `$cmd`;
@@ -814,7 +875,7 @@ sub getSmartStatsAndAttributes
         $line =~ s/\s+$//g;
         $line eq '' and next;
 
-        if ( !$in{smart} and $line eq '=== START OF READ SMART DATA SECTION ===' )
+        if ( !$in{smart} and $line =~ /=== START OF( READ)? SMART DATA SECTION ===/ )
         {
             $in{smart} = 1;
             next;
@@ -835,6 +896,12 @@ sub getSmartStatsAndAttributes
             $in{attributes} = 0;
             $in{statistics} = 1;
         }
+	#SMART/Health Information (NVMe Log 0x02, NSID 0xffffffff)
+	elsif ( $line =~ /SMART\/Health\sInformation\s\(NVMe\sLog/)
+	{
+            $in{attributes} = 1;
+	    $in{statistics} = 0;
+	}
         # 184 End-to-End_Error        0x0033   100   100   090    Pre-fail  Always       -       0
         # 187 Reported_Uncorrect      0x0032   100   100   000    Old_age   Always       -       0
         # 190 Temperature_Case        0x0022   086   081   000    Old_age   Always       -       14 (Min/Max 13/20)
@@ -868,6 +935,14 @@ sub getSmartStatsAndAttributes
                 raw_value => $10,
             });
         }
+	elsif ( $in{attributes} and  $line =~ /(.*):\s*(.*)/)
+	{
+		push(@{$result{attributes}}, {
+		 id=> 'nan',
+		 name=>$1,
+		 value=>$2
+		});
+	}
         #   1  =====  =                =  == General Statistics (rev 2) ==
         # 0x01  =====  =               =  ===  == General Statistics (rev 2) ==
         elsif ( $in{statistics} and $line =~ /^\s*(\d+|0x[\da-f]{2})\s+={5}\s{2}=\s+=\s{2}==(?:=\s{2}==)?\s(.+)\s==$/ )
@@ -929,7 +1004,6 @@ sub getSmartStatsAndAttributes
             return { status => 500, msg => 'Unhandled line in smartctl return' };
         }
     }
-
     return { status => 100, value => \%result };
 }
 
@@ -939,6 +1013,10 @@ sub getSmartLoggedError
     my %params = @_;
 
     my $smartDisk = $params{smartDisk};
+    if ($smartDisk =~ /nvd/)
+    {
+        $smartDisk =~ s/nvd/nvme/;
+    }
 
     my $cmd = "timeout 15 smartctl -l error,256 $smartDisk 2>/dev/null";
     my @smartLines = `$cmd`;
@@ -1102,6 +1180,10 @@ sub getSataPhyErrorCounters
 {
     my %params = @_;
     my $smartDisk = $params{smartDisk};
+    if ($smartDisk =~ /nvd/)
+    {
+        $smartDisk =~ s/nvd/nvme/;
+    }
 
     my $cmd = "timeout 15 smartctl -l sataphy $smartDisk 2>/dev/null";
     my @smartLines = `$cmd`;
@@ -1701,7 +1783,7 @@ sub completeCpuInfo
     my $status = $? >> 8;
     if( $status )
     {
-        return { status => 500, msg => "lscpu error: $!" };
+        return { status => 500, msg => "dmidecode error: $!" };
     }
 
     $cpuInfo{architecture} = `uname -p`;
@@ -1763,4 +1845,3 @@ sub completeCpuInfo
 
 
 hash_walk(\%server, [], \&print_keys_and_value);
-

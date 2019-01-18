@@ -1,3 +1,4 @@
 /usr/bin/rtmHardware
 /usr/bin/rtmHourly
 /usr/bin/rtmRaidCheck
+/usr/bin/diskUsage

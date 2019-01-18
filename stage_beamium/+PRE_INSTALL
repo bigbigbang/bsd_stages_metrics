@@ -4,6 +4,8 @@ pw useradd beamium -g beamium -d /nonexistent -L daemon -c "Beamium user"
 mkdir -p /opt/beamium
 chown -R beamium:beamium /opt/beamium
 mkdir -p /var/log/beamium
+touch /var/log/beamium/beamium.log
 chown -R beamium:beamium /var/log/beamium
+chown beamium:beamium /var/log/beamium/beamium.log
 mkdir -p /etc/beamium
 chown -R beamium:beamium /etc/beamium

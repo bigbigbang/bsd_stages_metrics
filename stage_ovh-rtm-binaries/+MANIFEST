@@ -31,6 +31,10 @@ prefix: /
        "version"   : "0.91_1",
        "origin" : "devel/p5-Sys-MemInfo"
     },
+    "p5-Filesys-Statvfs" : {
+        "version"   : "0.82_1",
+        "origin": "devel/p5-Filesys-Statvfs"
+    },
     "pciutils" : {
         "version": "*",
         "origin": "*"
