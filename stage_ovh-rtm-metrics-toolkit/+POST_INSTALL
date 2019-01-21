@@ -115,17 +115,20 @@ if [ -f $NODERIG_CONF ]; then
     cp $NODERIG_CONF /etc/noderig/config.yaml.ori
 fi
 
+ifconfig=$(ifconfig -l ether)
+IN=$( echo $ifconfig | egrep "^(eth|eno|ens|vtnet|igb)[0-9]")
+nics=$(echo $IN | tr " " "\n")
+
 cat << EOF > /etc/noderig/config.yaml
 # Find details at https://github.com/runabove/noderig
 
 cpu: 1
 mem: 1
 load: 2
-disk: 2
 net: 2
 net-opts:
   interfaces:
-$(ifconfig -l ether | egrep "^(eth|eno|ens|vtnet|igb)[0-9]" | while read line; do echo "   - $line"; done)
+$(for nic in $nics; do echo "   - $nic"; done)
 period: 60000
 collectors: /opt/noderig
 EOF
@@ -196,6 +199,7 @@ EOF
 sed -i -e "s/#token/$TOKEN/g" $BEAMIUM_CONF
 sed -i -e "s/#hostname/$HOSTNAME/g" $BEAMIUM_CONF
 echo "beamium configuration done"
+chown -R beamium:beamium /opt/beamium/
 
 service beamium restart 
 
