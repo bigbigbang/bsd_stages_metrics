@@ -35,6 +35,7 @@ foreach $passwdLine (@passwd) {
 }
 
 foreach $line (@netstatTable) {
+	$line =~ s/\s+/|/g;
         @tempTable = split(/\|/, $line);
         $socketInfo = $tempTable[5];
         $procInfo = $tempTable[2].'/'.$tempTable[1];
@@ -70,15 +71,17 @@ foreach $line (@netstatTable) {
 
 # top process
 my @top;
-my @output = `ps -A -o vsz,command -r | head -n 5`;
-$i=0;
-my @name;
-foreach (@output) {
-    next unless m/\s*(\d+)\s+(.+)/;
-    my @name=split ' ', $2;
+my @output = `top -o cpu -n 5 | tail -n 6 | head -n 5`;
+$i=1;
+foreach $line (@output) {
+    $line =~ s/\s+/|/g;
+    @tempTable = split(/\|/, $line);
+    my $size=$tempTable[6];
+    $size =~ s/K//;
+    my $name = $tempTable[11];
+    $server{'rtm.info.mem.top_mem_'.$i.'_size'}=$size;
+    $server{'rtm.info.mem.top_mem_'.$i.'_name'}=$name;
     $i++;
-    $server{'rtm.info.mem.top_mem_'.$i.'_size'}=$1;
-    $server{'rtm.info.mem.top_mem_'.$i.'_name'}=@name[0];
 }
 
 # get process runnig/count
@@ -149,7 +152,7 @@ sub loadAvg
     my $oneMinLoad = "-1";
     my $fiveMinLoad = "-1";
     my $tenMinLoad = "-1";
-    if( $load =~ /(\d+.\d+?)\s(\d+.\d+?)\s(\d+.\d+?)\s/ )
+    if( $load =~ /(\d+.\d+?)\s(\d+.\d+?)\s(\d+.\d+?)\s/g )
     {
         $oneMinLoad = $1;
         $fiveMinLoad = $2;

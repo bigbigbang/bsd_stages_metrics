@@ -54,13 +54,19 @@ $server{'rtm.info.uptime'} = $uptime;
 
 # CPU info
 my %cpu_info = ( 'cpu_no' => 0 );
-my %options;
 my $info = Sys::Info->new;
-my $cpu  = $info->device( CPU => %options );
+my $cpu  = $info->device('CPU');
 
 $server{'rtm.hw.cpu.number'} = $cpu->count;
 
-$server{'rtm.hw.cpu.name'} = scalar($cpu->identify);
+my $cpuName= $cpu->identify;
+if ($cpuName =~ /(\d\sx\s)?(.*)/)
+{
+    $cpuName=$2;
+}
+
+$server{'rtm.hw.cpu.name'} = $cpuName;
+
 
 my $frequency = `dmidecode -t processor | grep "Max Speed"`;
 $frequency =~ /(\d* [M|G]?Hz$)/;
