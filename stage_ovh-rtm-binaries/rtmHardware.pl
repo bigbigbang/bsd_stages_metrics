@@ -5,6 +5,7 @@ use strict;
 use Unix::Uptime; # uptime
 use Sys::Info;
 use Sys::Info::Constants qw( :device_cpu ); # CPU Info
+use HTML::Entities;
 
 my %globalSgPaths = ();
 
@@ -59,14 +60,16 @@ my $cpu  = $info->device('CPU');
 
 $server{'rtm.hw.cpu.number'} = $cpu->count;
 
-my $cpuName= $cpu->identify;
-if ($cpuName =~ /(\d\sx\s)?(.*)/)
+my $tempCpuName= scalar($cpu->identify);
+if ($tempCpuName =~ /(\d\sx\s)?(.+)/)
 {
-    $cpuName=$2;
+    $tempCpuName=$2;
+    $tempCpuName =~ s/^\s*//;
+    $tempCpuName =~ s/\s*$//;
+    $tempCpuName= encode_entities($tempCpuName);
+    $tempCpuName =~ s/&\#0;//;
+    $server{'rtm.hw.cpu.name'}=$tempCpuName;
 }
-
-$server{'rtm.hw.cpu.name'} = $cpuName;
-
 
 my $frequency = `dmidecode -t processor | grep "Max Speed"`;
 $frequency =~ /(\d* [M|G]?Hz$)/;

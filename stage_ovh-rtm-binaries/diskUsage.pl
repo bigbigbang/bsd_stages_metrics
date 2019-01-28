@@ -35,11 +35,11 @@ foreach my $line (@cmd)
 	    # printf "ovh.monitoring.celery.active.workers{host=$host} $s -1\n";
 	    #1547736587616283// os.disk.fs{host=smb-gra1-2.ovh.net, disk=homez/home}{mount=/homez/home} 46.815948280069215
 	    #1547736587616283// os.disk.fs{host=smb-gra1-2.ovh.net, disk=homez/home@2018-10-12_13:08:03}{mount=/homez/snap/install} 46.815948280069215
-	    print("os.disk.fs{disk=$fsMount,mount=$fs} ".time." $pused\n");
-	    print("os.disk.fs.used{disk=$fsMount,mount=$fs} ".time." $bused\n");
-	    print("os.disk.fs.total{disk=$fsMount,mount=$fs} ".time." $btotal\n");
-	    print("os.disk.fs.inodes.total{disk=$fsMount,mount=$fs} ".time." $itotal\n");
-	    print("os.disk.fs.inodes.used{disk=$fsMount,mount=$fs} ".time." $iused\n");
+	    print("os.disk.fs{disk=$fs,mount=$fsMount} ".time." $pused\n");
+	    print("os.disk.fs.used{disk=$fs,mount=$fsMount} ".time." $bused\n");
+	    print("os.disk.fs.total{disk=$fs,mount=$fsMount} ".time." $btotal\n");
+	    print("os.disk.fs.inodes.total{disk=$fs,mount=$fsMount} ".time." $itotal\n");
+	    print("os.disk.fs.inodes.used{disk=$fs,mount=$fsMount} ".time." $iused\n");
 	}
 
     }

@@ -35,6 +35,10 @@ prefix: /
         "version"   : "0.82_1",
         "origin": "devel/p5-Filesys-Statvfs"
     },
+    "p5-HTML-Entities-Interpolate" : {
+        "version"   : "*",
+        "origin": "textproc/p5-HTML-Entities-Interpolate"
+    },
     "pciutils" : {
         "version": "*",
         "origin": "*"

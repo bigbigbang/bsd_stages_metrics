@@ -5,6 +5,7 @@ $ENV{"LC_ALL"} = "POSIX";
 use strict;
 use utf8; # for \x{nnn} regex
 use Sys::MemInfo qw(totalmem freemem totalswap);
+use Data::Dumper;
 
 # init server hash
 my %server = ();
@@ -71,14 +72,37 @@ foreach $line (@netstatTable) {
 
 # top process
 my @top;
-my @output = `top -o cpu -n 5 | tail -n 6 | head -n 5`;
+my @output = `top -o cpu -n 5 | tail -n 7 | head -n 6`;
 $i=1;
-foreach $line (@output) {
+my $sizeIndex;
+my $commandIndex;
+# map with result from first line
+
+foreach $line (@output)
+{
     $line =~ s/\s+/|/g;
     @tempTable = split(/\|/, $line);
-    my $size=$tempTable[6];
+    if($line =~ /\|PID\|USERNAME\|THR\|PRI/)
+    {
+	# first line is head like :|PID|USERNAME|THR|PRI|NICE|SIZE|RES|STATE|TIME|WCPU|COMMAND| 
+	if($tempTable[6] eq 'SIZE')
+	{
+	    $sizeIndex=6;
+	}
+	if($tempTable[11] eq 'COMMAND')
+	{
+	    $commandIndex=11;
+	}
+	if($tempTable[12] eq 'COMMAND')
+	{
+	    $commandIndex=12;
+	}
+        next;	
+    }
+    
+    my $size=$tempTable[$sizeIndex];
     $size =~ s/K//;
-    my $name = $tempTable[11];
+    my $name = $tempTable[$commandIndex];
     $server{'rtm.info.mem.top_mem_'.$i.'_size'}=$size;
     $server{'rtm.info.mem.top_mem_'.$i.'_name'}=$name;
     $i++;

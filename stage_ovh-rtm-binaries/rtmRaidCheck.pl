@@ -1,4 +1,4 @@
-#! /usr/local/bin/perl
+#!/usr/local/bin/perl
 
 $ENV{"LC_ALL"} = "POSIX";
 
@@ -6,16 +6,11 @@ $ENV{"LC_ALL"} = "POSIX";
 # Shows information about RAID arrays such as disks capacity, models, overal array status.
 #
 
-
 use strict;
 use IO::Select;
 
 chomp(my @sysctl = `\/sbin\/sysctl dev 2>\/dev\/null`);
 
-# TODO: Soft RAID with:
-#   - gvinum and raid-5
-#
-# TODO: Mylex RAID support (no tools found. Only megarc/amrstat but not working for all cards)
 
 # timestamp init :
 my $timestamp = time;
@@ -28,7 +23,7 @@ if($#gmirror != -1 or $#gstripe != -1){
   # gmirror/gstripe enabled
   foreach(@gmirror, @gstripe){
     # mirror/home  DEGRADED  da0s1f (65%)
-    next unless $_ =~  m/^\s*(mirror|stripe)\/(\S+)\s+(\S+)\s+(.*?)(?:\s+\((\d+)%\))?\s*$/;
+    next unless $_ =~  m/^\s*(mirror|stripe)\/(\S+)\s+(\S+)\s+(\S+?)\s(?:\((\d+)%\))?\s*/;
     $raid{$1}{$2}{state} = $3;
     my %tmp = (name=>$4);
     $tmp{syncpercent} = $5 if $5;
@@ -40,10 +35,10 @@ if($#gmirror != -1 or $#gstripe != -1){
       my @data;
       if($type eq 'mirror'){
         chomp(@data = `gmirror list $vol 2>\/dev\/null`); 
-        print "{'metric':'rtm.hw.scsiraid.unit.$vol.vol0.type','timestamp':$timestamp,'value':mirror}\n";
+        print "{\"metric\":\"rtm.hw.scsiraid.unit.$vol.vol0.type\",\"timestamp\":$timestamp,\"value\":\"mirror\"}\n";
       }elsif($type eq 'stripe'){
         chomp(@data = `gstripe list $vol 2>\/dev\/null`); 
-        print "{'metric':'rtm.hw.scsiraid.unit.$vol.vol0.type','timestamp':$timestamp,'value':'stripe'}\n";
+        print "{\"metric\":\"rtm.hw.scsiraid.unit.$vol.vol0.type\",\"timestamp\":$timestamp,\"value\":\"stripe\"}\n";
       }
 
       # volume info:
@@ -51,23 +46,23 @@ if($#gmirror != -1 or $#gstripe != -1){
         last if /Consumers/i;
 
 	#print "hHW_SCSIRAID_UNIT_$type\_vol-$vol\_capacity|$1 $2\n"
-	print "{'metric':'rtm.hw.scsiraid.unit.$vol.vol0.capacity','timestamp':$timestamp,'value':'$1 $2}\n"
+	print "{\"metric\":\"rtm.hw.scsiraid.unit.$vol.vol0.capacity\",\"timestamp\":$timestamp,\"value\":\"$1 $2\"}\n"
           if /Mediasize:\s+\d+\s+\((\d+)(\w+)\)$/i;
 
 
 	  #print "hHW_SCSIRAID_UNIT_$type\_vol-$vol\_phys|$1\n"
-        print "{'metric':'rtm.hw.scsiraid.unit.$vol.vol0.phys','timestamp':$timestamp,'value':'$1'}\n"
+        print "{\"metric\":\"rtm.hw.scsiraid.unit.$vol.vol0.phys\",\"timestamp\":$timestamp,\"value\":\"$1\"}\n"
 	  if /Components:\s+(\d+)$/i;
 
         if(/State:\s+(\w+)$/){
           my $st = $1;
           $st eq 'COMPLETE' and $st = 'OK';
-          print "{'metric':'rtm.hw.scsiraid.unit.$vol.vol0.status','timestamp':$timestamp,'value':'$st'}\n";
+          print "{\"metric\":\"rtm.hw.scsiraid.unit.$vol.vol0.status\",\"timestamp\":$timestamp,\"value\":\"$st\"}\n";
 
         }
 
 	#print "hHW_SCSIRAID_UNIT_$type\_vol-$vol\_flags|$1\n"
-        print "{'metric':'rtm.hw.scsiraid.unit.$vol.vol0.flags','timestamp':$timestamp,'value':'$1'}\n"
+        print "{\"metric\":\"rtm.hw.scsiraid.unit.$vol.vol0.flags\",\"timestamp\":$timestamp,\"value\":\"$1\"}\n"
   	  if /Flags:\s*(\w+)$/;
       }
 
@@ -85,18 +80,18 @@ if($#gmirror != -1 or $#gstripe != -1){
           if /^(\d+)\.\s*Name:\s*(\S+)$/;
         
 	  #print "hHW_SCSIRAID_PORT_$type\_vol-$vol\_phy$ldi\_capacity|$1 $2\n"
-	print "{'metric':'rtm.hw.scsiraid.port.$vol.vol0.phy$ldi.capacity','timestamp':$timestamp, 'value':'$1 $2'}\n"
+	print "{\"metric\":\"rtm.hw.scsiraid.port.$vol.vol0.$ldn.capacity\",\"timestamp\":$timestamp, \"value\":\"$1 $2\"}\n"
           if /Mediasize:\s+\d+\s+\((\d+)(\w+)\)$/i;
 
 	  # print "hHW_SCSIRAID_PORT_$type\_vol-$vol\_phy$ldi\_status|$1\n"
-	print "{'metric':'rtm.hw.scsiraid.port.$vol.vol0.phy$ldi.status','timestamp':$timestamp,'value':'$1'}\n"
+	print "{\"metric\":\"rtm.hw.scsiraid.port.$vol.vol0.$ldn.status\",\"timestamp\":$timestamp,\"value\":\"$1\"}\n"
           if /State:\s*(\w+)$/;
         
 	  #print "hHW_SCSIRAID_PORT_$type\_vol-$vol\_phy$ldi\_flags|$1\n"
-	print "{'metric':'rtm.hw.scsiraid.port.$vol.vol0.phy$ldi.flags','timestamp':$timestamp,'value':'$1'}\n"
+	print "{\"metric\":\"rtm.hw.scsiraid.port.$vol.vol0.$ldn.flags\",\"timestamp\":$timestamp,\"value\":\"$1\"}\n"
           if /Flags:\s*(\S+)$/;
 
-        print "{'metric':'rtm.hw.scsiraid.port.$vol.vol0.phy$ldi.syncprogress','timestamp':$timestamp,'value':'$1'}\n" 
+        print "{\"metric\":\"rtm.hw.scsiraid.port.$vol.vol0.$ldn.syncprogress\",\"timestamp':$timestamp,\"value\":\"$1\"}\n" 
           if /Synchronized:\s*(\d+)%/;
       }
 
@@ -128,4 +123,5 @@ sub normalize {
   }
   return $bytes." $units[$i]";
 }
+
 
