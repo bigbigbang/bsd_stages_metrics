@@ -1,4 +1,4 @@
-#! /usr/bin/perl
+#!/usr/local/bin/perl
 $ENV{"LC_ALL"} = "POSIX";
 use warnings;
 use strict;
