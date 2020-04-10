@@ -1366,8 +1366,7 @@ sub getBackgroundScanResultsLogPage
                 last;
             }
             else
-            debug2: channel 0: window 993041 sent adjust 55535
-{
+            {
                 return { status => 500, msg => 'Unhandled sg_logs return' };
             }
         }
