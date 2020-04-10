@@ -1,4 +1,4 @@
-#! /usr/bin/perl
+#!/usr/local/bin/perl
 $ENV{"LC_ALL"} = "POSIX";
 use strict;
 use utf8; # for \x{nnn} regex
