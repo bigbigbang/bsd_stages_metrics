@@ -1,36 +1,15 @@
 #! /usr/bin/perl
 $ENV{"LC_ALL"} = "POSIX";
-use warnings;
 use strict;
-use Unix::Uptime; # uptime
+use utf8; # for \x{nnn} regex
+use warnings;
+use IPC::Open3;
 use Sys::Info;
 use Sys::Info::Constants qw( :device_cpu ); # CPU Info
 use HTML::Entities;
 
-my %globalSgPaths = ();
-
-my @dmesg_lines = ();
-
-eval {
-   my $fnret = getSgPaths();
-   if( ok($fnret) )
-   {
-       %globalSgPaths = %{$fnret->{value}};
-   }
-};
-
-eval {
-    my $fnret = getDmesg();
-    if( ok($fnret) )
-    {
-        @dmesg_lines = @{$fnret->{value}}
-    }
-};
-
 # init server hash
 my %server = ();
-$server{'rtm.info.rtm.version'} = "1.0.2";
-$server{'rtm.hostname'} = "Unknown";
 $server{'rtm.info.kernel.release'} = "Unknown";
 $server{'rtm.info.kernel.version'} = "Unknown";
 $server{'rtm.info.release.os'} = "Unknown";
@@ -44,404 +23,515 @@ $server{'rtm.hw.cpu.name'} = "Unknown";
 $server{'rtm.hw.cpu.number'} = "Unknown";
 $server{'rtm.hw.cpu.cache'} = "Unknown";
 $server{'rtm.hw.cpu.mhz'} = "Unknown";
-$server{'rtm.info.uptime'} = "Unknown";
 $server{'rtm.info.check.vm'} = "False";
 $server{'rtm.info.check.oops'} = "False";
 
-#uptime
-# get uptime
-my $uptime = Unix::Uptime->uptime(); # 2345
-$server{'rtm.info.uptime'} = $uptime;
+my %globalSgPaths = ();
+my @dmesg_lines = ();
 
-# CPU info
-my %cpu_info = ( 'cpu_no' => 0 );
-my $info = Sys::Info->new;
-my $cpu  = $info->device('CPU');
+rtmHardware();
+hash_walk(\%server, [], \&print_keys_and_value);
 
-$server{'rtm.hw.cpu.number'} = $cpu->count;
-
-my $tempCpuName= scalar($cpu->identify);
-if ($tempCpuName =~ /(\d\sx\s)?(.+)/)
+# main
+sub rtmHardware
 {
-    $tempCpuName=$2;
-    $tempCpuName =~ s/^\s*//;
-    $tempCpuName =~ s/\s*$//;
-    $tempCpuName= encode_entities($tempCpuName);
-    $tempCpuName =~ s/&\#0;//;
-    $server{'rtm.hw.cpu.name'}=$tempCpuName;
-}
-
-my $frequency = `dmidecode -t processor | grep "Max Speed"`;
-$frequency =~ /(\d* [M|G]?Hz$)/;
-$frequency=$1;
-$server{'rtm.hw.cpu.mhz'} = $frequency;
-    
-#if ($_ =~ /^cache size/) {
-#        s/cache size\s+:\s*//g;
-#        $server{'rtm.hw.cpu.cache'} = $_;
-#    }
-#}
-
-eval {
-    my $fnret = completeCpuInfo();
+    my $fnret = CPUInfo();
+    if (ok($fnret))
+    {
+        # ok values in server hash
+    }
+    else
+    {
+        print "Error with CPUInfo \n";
+    }
+    $fnret = getSgPaths();
     if( ok($fnret) )
     {
-        my %info = %{$fnret->{value}};
-        $server{'rtm.hw.cpu.fmax_mhz'} = $info{fmax_mhz} || -1;
-        $server{'rtm.hw.cpu.fmin_mhz'} = $info{fmin_mhz} || -1;
-        $server{'rtm.hw.cpu.sockets'} = $info{sockets} || -1;
-        $server{'rtm.hw.cpu.cores'} = $info{cores} || -1;
-        $server{'rtm.hw.cpu.threads'} = $info{threads} || -1;
+        %globalSgPaths = %{$fnret->{value}};
     }
-};
-
-# check for allocation failed or kernel oops
-if (`dmesg | grep -i "allocation failed"`) {
-    $server{'rtm.info.check.vm'}="True";
+    $fnret = getDmesg();
+    if( ok($fnret) )
+    {
+        @dmesg_lines = @{$fnret->{value}}
+    }
+    $fnret = kernel();
+    if (ok($fnret))
+    {   
+        # ok values in server hash
+    }
+    else
+    {
+        print "Error with kernel_oops \n";
+    }
+    $fnret = os();
+    if (ok($fnret))
+    {   
+        # ok values in server hash
+    }
+    else
+    {
+        print "Error with os \n";
+    }
+    $fnret = motherboard();
+    if (ok($fnret))
+    {
+        # ok values in server hash
+    }
+    else
+    {
+        print "Error with motherboard \n";
+    }
+    $fnret = disk();
+    if (ok($fnret))
+    {   
+        # ok values in server hash
+    }
+    else
+    {
+        print "Error with disk \n";
+    }
+    $fnret = lspci();
+    if (ok($fnret))
+    {
+        # ok values in server hash
+    }
+    else
+    {
+        print "Error with lspci \n";
+    }
 }
 
-if (`dmesg | grep -i "Oops"`) {
-    $server{'rtm.info.check.oops'}="True";
-}
-
-$server{'rtm.hostname'}=`hostname`;
-$server{'rtm.info.kernel.release'}=`uname -r`;
-$server{'rtm.info.kernel.version'}=`uname -v`;
-my $osDetect = `uname -s -r -U`;
-if ($? == 0)
+# CPU info
+sub CPUInfo
 {
-    $server{'rtm.info.release.os'}=$osDetect;
+	my %cpu_info = ( 'cpu_no' => 0 );
+	my $info = Sys::Info->new;
+	my $cpu  = $info->device('CPU');
+    
+	$server{'rtm.hw.cpu.number'} = $cpu->count;
+
+	my $tempCpuName= scalar($cpu->identify);
+	if ($tempCpuName =~ /(\d\sx\s)?(.+)/)
+	{
+    		$tempCpuName=$2;
+    		$tempCpuName =~ s/^\s*//;
+    		$tempCpuName =~ s/\s*$//;
+    		$tempCpuName= encode_entities($tempCpuName);
+    		$tempCpuName =~ s/&\#0;//;
+    		$server{'rtm.hw.cpu.name'}=$tempCpuName;
+	}
+
+	my $frequency = `dmidecode -t processor | grep "Max Speed"`;
+	$frequency =~ /(\d* [M|G]?Hz$)/;
+	$frequency=$1;
+	$server{'rtm.hw.cpu.mhz'} = $frequency;
+	return {status =>100};	
+}
+
+sub kernel
+{
+    # kernel release
+    my $fnret = execute('uname -r');
+    if ( $fnret->{status} != 100  or !defined($fnret->{value}[0]))
+    {
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "uname error: ".$fnret->{msg}};
+    }
+    else
+    {
+        $server{'rtm.info.kernel.release'}=$fnret->{value}[0];
+    }
+    # kernel version
+    $fnret = execute('uname -v');
+    if ( $fnret->{status} != 100 or !defined($fnret->{value}[0]))
+    {
+        print $fnret->{msg}. "\n";
+        return { status => 500, msg => "uname error: ".$fnret->{msg} };
+    }
+    else
+    {
+        $server{'rtm.info.kernel.version'}=$fnret->{value}[0];
+    }
+    return {status=>100};
+}
+
+sub os
+{
+    my $fnret =execute("uname -s -r -U");
+    if ( $fnret->{status} != 100 )
+    {
+        print "Error ".$fnret->{msg}." \n";
+    }
+    else
+    {
+        $server{'rtm.info.release.os'} = $fnret->{value}[0];
+        return {status=>100};
+    }
 }
 
 # motherboard
-my @dmidecode = `dmidecode 2>/dev/null`;
-for (my $i = 0; $i < @dmidecode; $i++){
-    # Bios
-    if($dmidecode[$i] =~ /^\s*BIOS Information/i) {
-        my $biosVendor = $dmidecode[$i+1];
-        $biosVendor =~ /Vendor:\s+(.*)/;
-        $server{'rtm.info.bios_vendor'} = $1;
-        my $biosVersion = $dmidecode[$i+2];
-        $biosVersion =~ /Version:\s+(.*)/;
-        $server{'rtm.info.bios_version'} = $1;
-        my $biosRelease = $dmidecode[$i+3];
-        $biosRelease =~ /Release Date:\s+(.*)/;
-        $server{'rtm.info.bios_date'} = $1;
+sub motherboard
+{
+    my $fnret = execute('dmidecode');
+    if ( $fnret->{status} != 100 )
+    {
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "dmidecode error: ".$fnret->{msg}};
     }
-
-    # motherboard
-    if($dmidecode[$i] =~ /^\s*Base Board Information/i) {
-        my $manufacturer = $dmidecode[$i+1];
-        $manufacturer =~ /Manufacturer:\s+(.*)/;
-        $server{'rtm.hw.mb.manufacture'} = $1;
-        my $mbName = $dmidecode[$i+2];
-        $mbName =~ /Product Name:\s+(.*)/;
-        $server{'rtm.hw.mb.name'} = $1;
-        my $mbSerial = $dmidecode[$i+4];
-        $mbSerial =~ /Serial Number:\s+(.*)/;
-        $server{'rtm.hw.mb.serial'} = $1;
-
-    }
-    # memory
-    if($dmidecode[$i] =~ /^\s*Memory Device/i) {
-        my $bank = $dmidecode[$i+9];
-        $bank =~ /Bank Locator:\s+(.*)/;
-        $bank = $1;
-        next if !$bank;
-        $bank =~ s/\s//g;
-        $bank =~ s/[\s\.\/\\_]/-/g;
-        my $locator = $dmidecode[$i+8];
-        $locator =~ /Locator:\s+(.*)/;
-        $locator = $1;
-        next if !$locator;
-        $locator =~ s/\s//g;
-        $locator =~ s![\s./\\_#]!-!g;
-        my $size = $dmidecode[$i+5];
-        $size =~ /Size:\s+(.*)/;
-        $size = $1;
-        next if !$size;
-        $size =~ s/\s*MB\s*//g;
-        chomp($size);
-        my $type = $dmidecode[$i+10];
-        $type =~ /Type:\s+(.*)/;
-        $type = $1;
-        next if !$type;
-        my $speed = $dmidecode[$i+12];
-        $speed =~ /Speed:\s+(.*)/;
-        $speed = $1;
-        next if !$speed;
-        my $manufacturer = $dmidecode[$i+13];
-        $manufacturer =~ /Manufacturer:\s+(.*)/;
-        $manufacturer = $1;
-        next if !$manufacturer;
-        if ($bank . $locator ne "") {
-            $server{'rtm.hw.mem.bank-'.$bank . '-' . $locator} = $size;
-#            $server{'rtm.hw.mem.bank-'.$bank . '-' . $locator}{'size'} = $size;
-#            $server{'rtm.hw.mem'}{$bank . "-" . $locator}{'type'} = $type;
-#            $server{'rtm.hw.mem'}{$bank . "-" . $locator}{'speed'} = $speed;
-#            $server{'rtm.hw.mem'}{$bank . "-" . $locator}{'manufacturer'} = $manufacturer;
+    else
+    {
+        for (my $i = 0; $i < @{$fnret->{value}}; $i++)
+        {
+            # Bios
+            if($fnret->{value}[$i] =~ /^\s*BIOS Information/i)
+            {
+                my $biosVendor = $fnret->{value}[$i+1];
+                $biosVendor =~ /Vendor:\s+(.*)/;
+                $server{'rtm.info.bios_vendor'} = $1;
+                my $biosVersion = $fnret->{value}[$i+2];
+                $biosVersion =~ /Version:\s+(.*)/;
+                $server{'rtm.info.bios_version'} = $1;
+                my $biosRelease = $fnret->{value}[$i+3];
+                $biosRelease =~ /Release Date:\s+(.*)/;
+                $server{'rtm.info.bios_date'} = $1;
+            }
+            # motherboard
+            if($fnret->{value}[$i] =~ /^\s*Base Board Information/i)
+            {
+                my $manufacturer = $fnret->{value}[$i+1];
+                $manufacturer =~ /Manufacturer:\s+(.*)/;
+                $server{'rtm.hw.mb.manufacture'} = $1;
+                my $mbName = $fnret->{value}[$i+2];
+                $mbName =~ /Product Name:\s+(.*)/;
+                $server{'rtm.hw.mb.name'} = $1;
+                my $mbSerial = $fnret->{value}[$i+4];
+                $mbSerial =~ /Serial Number:\s+(.*)/;
+                $server{'rtm.hw.mb.serial'} = $1;
+            }
+            # memory
+            if($fnret->{value}[$i] =~ /^\s*Memory Device/i)
+            {
+                my $bank = $fnret->{value}[$i+9];
+                $bank =~ /Bank Locator:\s+(.*)/;
+                $bank = $1;
+                next if !$bank;
+                $bank =~ s/\s//g;
+                $bank =~ s/[\s\.\/\\_]/-/g;
+                my $locator = $fnret->{value}[$i+8];
+                $locator =~ /Locator:\s+(.*)/;
+                $locator = $1;
+                next if !$locator;
+                $locator =~ s/\s//g;
+                $locator =~ s![\s./\\_#]!-!g;
+                my $size = $fnret->{value}[$i+5];
+                $size =~ /Size:\s+(.*)/;
+                $size = $1;
+                next if !$size;
+                $size =~ s/\s*MB\s*//g;
+                chomp($size);
+                if ($bank . $locator ne "")
+                {
+                    $server{'rtm.hw.mem.bank-'.$bank . '-' . $locator} = $size;
+                }
+            }
         }
+        return {status=>100};
     }
 }
 
 # get disk
-my @disks = split(" ",`sysctl -n kern.disks`);
-if ($? == 0) {
-    foreach my $disk (@disks) {
-        if ($disk =~ /(^\w*)/) {
-            my $disk = $1;
-            $server{'rtm.info.hdd'}{$disk}{'model'}="Unknown";
-            $server{'rtm.info.hdd'}{$disk}{'capacity'}="Unknown";
-            $server{'rtm.info.hdd'}{$disk}{'serial'}="Unknown";
-            $server{'rtm.info.hdd'}{$disk}{'temperature'}=0;
-        }
-    }
-}
-
-# smart on all disk
-foreach my $disk (keys %{$server{'rtm.info.hdd'}}) {
-    my $diskSmart = "/dev/".$disk;
-    if ($diskSmart =~ /nvd/)
+sub disk
+{
+    my $fnret = execute('sysctl -n kern.disks');
+    if ( $fnret->{status} != 100 )
     {
-        $diskSmart =~ s/nvd/nvme/;
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "sysctl error: ".$fnret->{msg}};
     }
-    my $before = time();
-    my @smartctl =  `smartctl -a $diskSmart 2>/dev/null`;
-    my $after = time();
-
-    my $smartTime = $after - $before;
-    $server{'rtm.info.hdd'}->{$disk}->{'smart'}->{'time'} = $smartTime;
-
-    my $smart_other_error = 0;
-    foreach my $line (@smartctl) {
-        if ( $line =~ /^Transport\s*protocol\s*:\s+SAS/ )
+    else
+    {
+        my @disks = split(" ",$fnret->{value}[0]);
+        foreach my $line (@disks)
         {
-            $server{'rtm.info.hdd'}->{$disk}->{link_type} = 'sas';
-            next;
-        }
-        if ($line =~ /^(?:Product|Device Model|Model Number):\s+(.*)$/i or $line =~ /Device:\s+([^\s].+)Version/i )
-        {
-            $server{'rtm.info.hdd'}{$disk}{'model'}=$1;
-            next;
-        }
-        if ($line =~ /^Serial Number:.(.*)$/i) {
-            $server{'rtm.info.hdd'}{$disk}{'serial'}=$1;
-            next;
-        }
-        if ($line =~ /.*Capacity:\s+.*\[(.*)\]/) {
-            $server{'rtm.info.hdd'}{$disk}{'capacity'}=$1;
-            next;
-        }
-        if ($line =~ /^Firmware Version:.(.*)$/i) {
-            $server{'rtm.info.hdd'}{$disk}{'firmware'}=$1;
-            next;
-        }
-        if ($line =~ /^\s+5 Reallocated_Sector_Ct.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'reallocated-sector-count'}=$1;
-            next;
-        }
-        if ($line =~ /^187 Reported_Uncorrect.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'reported-uncorrect'}=$1;
-            next;
-        }
-        if ($line =~ /^196 Reallocated_Event_Count.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'realocated-event-count'}=$1;
-            next;
-        }
-        if ($line =~ /^197 Current_Pending_Sector.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'current-pending-sector'}=$1;
-            next;
-        }
-        if ($line =~ /^198 Offline_Uncorrectable.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'offline-uncorrectable'}=$1;
-            next;
-        }
-        if ($line =~ /^199 UDMA_CRC_Error_Count.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'udma-crc-error'}=$1;
-            next;
-        }
-        if ($line =~ /^200 Multi_Zone_Error_Rate.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'multizone-error-rate'}=$1;
-            next;
-        }
-        if ($line =~ /^209 Offline_Seek_Performnce.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'offline-seek-performance'}=$1;
-            next;
-        }
-        if ($line =~ /^\s+9 Power_On_Hours.*\s+(\d+)$/) {
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'power-on-hours'}=$1;
-            next;
-        }
-        if ($line =~ /^\s+Power On Hours*.\s+(\d+)$/) {
-	    $1 =~ s/,//;
-            $server{'rtm.info.hdd'}{$disk}{'smart'}{'power-on-hours'}=$1;
-            next;
-        }
-	if ($line =~ /.*Temperature:\s+(\d*)/) {
-            $server{'rtm.info.hdd'}{$disk}{'temperature'}=$1;
-        }
-
-        if ($line =~ /Error \d+ (occurred )?at /){
-            if ($line =~ /^read:.+(\d+)$/) {
-                $server{'rtm.info.hdd'}{$disk}{'smart'}{'uncorrected-read-errors'}=$1;
-                next;
-            }
-            if ($line =~ /^write:.+(\d+)$/) {
-                $server{'rtm.info.hdd'}{$disk}{'smart'}{'uncorrected-write-errors'}=$1;
-                next;
-            }
-        }
-    }
-
-    # New way to gather stats
-    eval {
-        my $linkType = $server{'rtm.info.hdd'}->{$disk}->{link_type};
-        my $realDisk = $disk;
-	if( $disk !~ /^\/dev\// )
-	{
-	    $realDisk = "/dev/$disk";
-	    if ($realDisk =~ /nvd/)
+            if ($line =~ /(^\w*)/)
             {
-                $realDisk =~ s/nvd/nvme/;
+                my $disk = $1;
+                $server{'rtm.info.hdd'}{$disk}{'model'}="Unknown";
+                $server{'rtm.info.hdd'}{$disk}{'capacity'}="Unknown";
+                $server{'rtm.info.hdd'}{$disk}{'serial'}="Unknown";
+                $server{'rtm.info.hdd'}{$disk}{'temperature'}=0;
             }
-	}
-        my $fnret = gatherStats( smartDisk => $realDisk, sgPaths => \%globalSgPaths, linkType => $linkType );
-        if(ok($fnret) and $fnret->{value})
-        {
-            my %smartUpdate = %{$fnret->{value}};
-            my %smartInfo = defined $server{'rtm.info.hdd'}->{$disk}->{smart} ? %{$server{'rtm.info.hdd'}->{$disk}->{smart}} : ();
-            @smartInfo{keys %smartUpdate} = values %smartUpdate;
-            $server{'rtm.info.hdd'}->{$disk}->{smart} = \%smartInfo;
         }
-    };
-
-    # Get related dmesg errors
-    eval {
-        my $fnret = countDmesgErrors(
-            diskName => $disk,
-            lines => \@dmesg_lines,
-        );
-
-        if( ok($fnret) )
+        # smart on all disk
+        foreach my $disk (keys %{$server{'rtm.info.hdd'}})
         {
-            $server{'rtm.info.hdd'}->{$disk}->{'dmesg.io.errors'} = $fnret->{value};
+            my $diskSmart = "/dev/".$disk;
+	    if ($diskSmart =~ /nvd/)
+            {
+                $diskSmart =~ s/nvd/nvme/;
+            }
+            my $before = time();
+            if ($diskSmart =~ /dev\/nvme(\d+)n(\d+)/)
+            {
+                $diskSmart = "/dev/nvme".$1;
+            }
+            my $fnret =  execute("smartctl -a $diskSmart 2>/dev/null");
+            if ( $fnret->{status} != 100 )
+            {
+                print $fnret->{msg}." \n";
+                next;
+            }
+            else
+            {
+                my $after = time();
+                my $smartTime = $after - $before;
+                $server{'rtm.info.hdd'}->{$disk}->{'smart'}->{'time'} = $smartTime;
+                $server{'rtm.info.hdd'}->{$disk}->{link_type} = 'sata';
+                my $filename = "/sys/class/block/$disk/queue/rotational";
+                my $fh;
+                my $diskType = 'hdd';
+                if( -e $filename and open($fh, '<', $filename) )
+                {
+                    my $rotational = <$fh>;
+                    chomp($rotational);
+                    close($fh);
+                    if( "$rotational" eq "0" )
+                    {
+                        $diskType = "ssd";
+                    }
+                }
+
+                if( $diskSmart =~ /nvme/ )
+                {
+                    $server{'rtm.info.hdd'}->{$disk}->{link_type} = 'pcie';
+                    $diskType = 'nvme';
+                }
+
+                $server{'rtm.info.hdd'}->{$disk}->{disk_type} = $diskType;
+                my $smartctl = $fnret->{value};
+                my $smart_other_error = 0;
+                foreach my $line (@{$smartctl})
+                {
+                    if ( $line =~ /^Transport\s*protocol\s*:\s+SAS/i )
+                    {
+                        $server{'rtm.info.hdd'}->{$disk}->{link_type} = 'sas';
+                        next;
+                    }
+                    if ($line =~ /^(?:Product|Device Model|Model Number):\s+(.*)$/i or $line =~ /Device:\s+([^\s].+)Version/i )
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'model'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^Serial Number:.(.*)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'serial'}=$1;
+                        next;
+                    }
+                    if ($line =~ /.*Capacity:\s+.*\[(.*)\]/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'capacity'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^Firmware Version:.(.*)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'firmware'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^\s+5 Reallocated_Sector_Ct.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'reallocated-sector-count'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^187 Reported_Uncorrect.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'reported-uncorrect'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^196 Reallocated_Event_Count.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'realocated-event-count'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^197 Current_Pending_Sector.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'current-pending-sector'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^198 Offline_Uncorrectable.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'offline-uncorrectable'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^199 UDMA_CRC_Error_Count.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'udma-crc-error'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^200 Multi_Zone_Error_Rate.*\s+(\d+)$/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'multizone-error-rate'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^209 Offline_Seek_Performa?nce.*\s+(\d+)$/)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'offline-seek-performance'}=$1;
+                        next;
+                    }
+                    if ($line =~ /^\s+9 Power_On_Hours.*\s+(\d+)$/)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'smart'}{'power-on-hours'}=$1;
+                        next;
+                    }
+                    if ($line =~ /Error \d+ (occurred )?at /)
+                    {
+                        if ($line =~ /^read:.+(\d+)$/)
+                        {
+                            $server{'rtm.info.hdd'}{$disk}{'smart'}{'uncorrected-read-errors'}=$1;
+                            next;
+                        }
+                        if ($line =~ /^write:.+(\d+)$/)
+                        {
+                            $server{'rtm.info.hdd'}{$disk}{'smart'}{'uncorrected-write-errors'}=$1;
+                            next;
+                        }
+                    }
+                    if ($line =~ /^temperature\s+:\s+([0-9]+)/i)
+                    {
+                        $server{'rtm.info.hdd'}{$disk}{'temperature'}=$1;
+                        next;
+                    }
+                }
+
+                if ($diskType ne 'nvme')
+                {
+                    my $fnret= execute("hddtemp $diskSmart 2>/dev/null");
+                    if ( $fnret->{status} != 100 )
+                    {
+                        print $fnret->{msg}." \n";
+                        next;
+                    }
+                    elsif (defined $fnret->{value}[0])
+                    {
+                        my $hddtemp=$fnret->{value}[0];
+                        if ($hddtemp =~ m/.*:.*:\s(\d+)/)
+                        {
+                            $server{'rtm.info.hdd'}{$disk}{'temperature'}=$1;
+                        }
+                    }
+                }
+        
+                # New way to gather stats
+                my $linkType = $server{'rtm.info.hdd'}->{$disk}->{link_type};
+                my $realDisk = $disk;
+                if( $disk !~ /^\/dev\// )
+                {
+                    $realDisk = "/dev/$disk";
+               	    if ($realDisk =~ /nvd/)
+                    {
+	                $realDisk =~ s/nvd/nvme/;
+                    }
+		}
+                my $fnret = gatherStats( smartDisk => $realDisk, sgPaths => \%globalSgPaths, linkType => $linkType );
+                if(ok($fnret) and $fnret->{value})
+                {
+                    my $smartUpdate = $fnret->{value};
+                    my %smartInfo = defined $server{'rtm.info.hdd'}->{$disk}->{smart} ? %{$server{'rtm.info.hdd'}->{$disk}->{smart}} : ();
+                    @smartInfo{keys %{$smartUpdate}} = values %{$smartUpdate};
+                    $server{'rtm.info.hdd'}->{$disk}->{smart} = \%smartInfo;
+                }
+        
+                # Get related dmesg errors
+                $fnret = countDmesgErrors(
+                    diskName => $disk,
+                    lines => \@dmesg_lines,
+                );
+                if( ok($fnret) )
+                {
+                    $server{'rtm.info.hdd'}->{$disk}->{'dmesg.io.errors'} = $fnret->{value};
+                }
+                $fnret = iostatCounters(
+                    diskName => $disk,
+                );
+                if( ok($fnret) )
+                {
+                    defined $fnret->{value}->{'r_await'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.read.avg.wait'} = $fnret->{value}->{'r_await'};
+                    defined $fnret->{value}->{'w_await'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.write.avg.wait'} = $fnret->{value}->{'w_await'};
+                    defined $fnret->{value}->{'rrqm/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.read.merged.per.sec'} = $fnret->{value}->{'rrqm/s'};
+                    defined $fnret->{value}->{'wrqm/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.write.merged.per.sec'} = $fnret->{value}->{'wrqm/s'};
+                    defined $fnret->{value}->{'r/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.read.per.sec'} = $fnret->{value}->{'r/s'};
+                    defined $fnret->{value}->{'w/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.write.per.sec'} = $fnret->{value}->{'w/s'};
+                    defined $fnret->{value}->{'%idle'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.busy'} = $fnret->{value}->{'%idle'};
+                    defined $fnret->{value}->{'%util'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.busy'} = $fnret->{value}->{'%util'};
+                    defined $fnret->{value}->{'rkB/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.readkb.per.sec'} = $fnret->{value}->{'rkB/s'};
+                    defined $fnret->{value}->{'wkB/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.writekb.per.sec'} = $fnret->{value}->{'wkB/s'};
+                }
+            }
         }
-    };
-
-    eval {
-        my $fnret = iostatCounters(
-            diskName => $disk,
-        );
-
-        if( ok($fnret) )
-        {
-	    defined $fnret->{value}->{'ms/r'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.read.avg.wait'} = $fnret->{value}->{'r_await'};
-	    defined $fnret->{value}->{'ms/w'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.write.avg.wait'} = $fnret->{value}->{'w_await'};
-	    # defined $fnret->{value}->{'rrqm/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.read.merged.per.sec'} = $fnret->{value}->{'rrqm/s'};
-	    #defined $fnret->{value}->{'wrqm/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.write.merged.per.sec'} = $fnret->{value}->{'wrqm/s'};
-            defined $fnret->{value}->{'r/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.read.per.sec'} = $fnret->{value}->{'r/s'};
-            defined $fnret->{value}->{'w/s'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.write.per.sec'} = $fnret->{value}->{'w/s'};
-            defined $fnret->{value}->{'%b'} and $server{'rtm.info.hdd'}->{$disk}->{'iostat.busy'} = $fnret->{value}->{'%idle'};
-        }
-
-    };
-
+        return {status=>100};
+    }
 }
 
 #lspci
-my @lspci = `lspci -n 2>/dev/null`;
-my %lspci_info = ();
-if ($? == 0) {
-    foreach (@lspci) {
-        if (/^(\S+).+:\s+(.+:.+)\s+\(/i) {
-            $lspci_info{$1} = $2;
-        }
-        elsif (/^(\S+).+:\s+(.+:.+$)/i){
-            $lspci_info{$1} = $2;
-        }
-    }
-    foreach (keys %lspci_info) {
-        my $tempKey = $_;
-        $tempKey =~ s/\:|\.|\_/-/g;
-            $server{'rtm.hw.lspci.pci.'.$tempKey}=$lspci_info{$_};
-    }
-}
-
-sub hash_walk {
-    my ($hash, $key_list, $callback) = @_;
-    while (my ($key, $value) = each (%$hash)) {
-        $key =~ s/^\s+|\s+$//g;
-        push @$key_list, $key;
-        if (ref($value) eq 'HASH') {
-            hash_walk($value,$key_list,$callback)
-        } else {
-            $callback->($key, $value, $key_list);
-        }
-        pop @$key_list;
-    }
-}
-
-sub print_keys_and_value {
-    my ($k, $v, $key_list) = @_;
-    $v =~ s/^\s+|\s+$//g;
-    my $key;
-    foreach (@$key_list) {
-        if ($key) {
-            $key = $key.".".$_;
-        } else {
-            $key = $key.$_;
-        }
-    }
-    print "{\"metric\":\"$key\",\"timestamp\":".time.",\"value\":\"".$v."\"}\n";
-}
-
-
-sub ok
+sub lspci
 {
-    my $arg = shift;
-
-    if ( ref $arg eq 'HASH' and $arg->{status} eq 100 )
+    my $fnret = execute("lspci -n 2>/dev/null");
+    if ( $fnret->{status} != 100 )
     {
-        return 1;
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "lspci error: ".$fnret->{msg}};
     }
-
-    return 0;
+    else
+    {
+        my %lspci_info = ();
+        foreach my $line (@{$fnret->{value}})
+        {
+                if ($line =~ /^(\S+).+:\s+(.+:.+)\s+\(/i)
+                {
+                    $lspci_info{$1} = $2;
+                }
+                elsif ($line =~ /^(\S+).+:\s+(.+:.+$)/i)
+                {
+                    $lspci_info{$1} = $2;
+                }
+        }
+        foreach my $tempKey (keys %lspci_info)
+        {
+            my $temp = $tempKey;
+            $temp =~ s/\:|\.|\_/-/g;
+            $server{'rtm.hw.lspci.pci.'.$temp}=$lspci_info{$tempKey};
+        }
+        return {status=>100};
+    }
 }
 
 sub getSectorSize {
     my %params = @_;
     my $disk = $params{disk};
-    if ($disk =~ /nvme/)
+    my $fnret = execute("blockdev --getss $disk");
+    if ( $fnret->{status} != 100 )
     {
-        $disk =~ s/nvme/nvd/;
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "Error: unable to get sector size for device $disk"};
     }
-    my $cmd = "diskinfo -v $disk | tail -n +2 | grep sectorsize";
-    my $sectorSize = `$cmd`;
-    my $last_status = $? >> 8;
-    if( $last_status != 0 )
+    elsif (defined($fnret->{value}[0]))
     {
-        return { status => 500, msg => "Error: unable to get sector size for device $disk" };
+        my $sectorSize = $fnret->{value}[0];
+        if( $sectorSize !~ /\d+/ )
+        {
+            return { status => 500, msg => "Error: unexpected format for sectorSize; $sectorSize" };
+        }
+        return { status => 100, value => $sectorSize };
     }
-    
-    if( $sectorSize =~ /(\d+)/)
+    else
     {
-	$sectorSize=$1;
+        return { status => 500};
     }
-    elsif( $sectorSize !~ /(\d+)/ )
-    {
-        return { status => 500, msg => "Error: unexpected format for sectorSize; $sectorSize" };
-    }
-    return { status => 100, value => $sectorSize };
 }
 
 sub getSmartOverallHealthStatus
 {
     my %params = @_;
     my $smartDisk = $params{smartDisk};
-    if ($smartDisk =~ /nvd/)
-    {
-        $smartDisk =~ s/nvd/nvme/;
-    }
     my @lines = `smartctl -H $smartDisk 2>/dev/null`;
     my $last_status = $? >> 8;
     $last_status = $last_status & 7;
@@ -456,10 +546,8 @@ sub getSmartOverallHealthStatus
             return { status => 100, value => { status => 'success' } };
         }
     }
-
     return { status => 100, value => { status => 'failed' } };
 }
-
 
 sub getSmartCommonInfo
 {
@@ -467,6 +555,11 @@ sub getSmartCommonInfo
     my $smartDisk = $params{smartDisk};
     my $health = -1;
     my $loggedErrorCount = -1;
+
+    if ($smartDisk =~ /dev\/nvme(\d+)n(\d+)/)
+    {
+        $smartDisk = "/dev/nvme".$1;
+    }
 
     # overall health as boolean 0 -> KO, 1 -> OK
     my $fnret = getSmartOverallHealthStatus(smartDisk => $smartDisk);
@@ -498,7 +591,8 @@ sub gatherStats
     my %sgPaths = %{$params{sgPaths} || {} };
     my $smartDisk  = $params{smartDisk}  || return { status => 201, msg => 'Missing argument' };
     my $fnret;
-    if( $linkType and $linkType eq 'sas' ) {
+    if( $linkType and $linkType eq 'sas' )
+    {
         my $sgDisk = $sgPaths{$smartDisk}->{sgDrive};
         if( ! $sgDisk )
         {
@@ -506,12 +600,15 @@ sub gatherStats
         }
         $fnret = getSmartStatsSAS( sgDisk => $sgDisk, smartDisk => $smartDisk );
     }
+    elsif( $linkType and $linkType eq 'pcie' )
+    {
+        $fnret = getSmartStatsNvme( smartDisk => $smartDisk );
+    }
     else
     {
         $fnret = getSmartStatsATA(smartDisk => $smartDisk);
     }
     return $fnret;
-
 }
 
 sub getSmartStatsATA
@@ -523,15 +620,12 @@ sub getSmartStatsATA
     $sectorSize = $sectorSize->{value};
 
     my $fnret = getSmartStatsAndAttributes(smartDisk => $smartDisk);
-
     my $smartStats     = $fnret->{value};
-
-    my $bytesWritten   = -1;
-    my $bytesRead      = -1;
-    my $percentageUsed = -1;
-    my $powerOnHours   = -1;
-    my $powerCycles    = -1;
-    #was undef until here
+    my $bytesWritten   = undef;
+    my $bytesRead      = undef;
+    my $percentageUsed = undef;
+    my $powerOnHours   = undef;
+    my $powerCycles    = undef;
     my $linkFailures       = -1;
     my $eccCorrectedErrs = -1;
     my $eccUncorrectedErrs = -1;
@@ -658,10 +752,6 @@ sub getSmartStatsATA
         }
     }
 
-
-    # Gather the following attributes, useful to predict failures
-    # https://www.backblaze.com/blog/hard-drive-smart-stats/
-
     ##
     ## Gather eccUncorrectedErrs information (187)
     ##
@@ -727,7 +817,6 @@ sub getSmartStatsATA
         }
     }
 
-
     #
     # Offline_Uncorrectable (198)
     #
@@ -766,47 +855,6 @@ sub getSmartStatsATA
     {
         $lowestTemperature = $tempStat->{value};
     }
-
-
-    ## Free BSD nvme
-    if ( my ($attr) = grep { $_->{name} eq 'Power On Hours' } @{$smartStats->{attributes}} )
-    {
-        $attr->{value} =~ /^\d*/ or return { status => 500, msg => 'Unconsistent POH counter' };
-        my $value = $attr->{value};
-        $value =~ s/,//g;
-        $powerOnHours = $value;
-    }
-    if ( my ($attr) = grep { $_->{name} eq 'Power Cycles' } @{$smartStats->{attributes}} )
-    {
-        $attr->{value} =~ /^\d*/ or return { status => 500, msg => 'Unconsistent POH counter' };
-        my $value = $attr->{value};
-        $value =~ s/,//;
-        $powerCycles = $value;
-    }
-    if ( my ($attr) = grep { $_->{name} eq 'Temperature' } @{$smartStats->{attributes}} )
-    {
-        $attr->{value} =~ /^\d*/ or return { status => 500, msg => 'Unconsistent smart temperature' };
-        my $value = $attr->{value};
-	$value =~ s/Celsius//;
-        $temperature = $value;
-    }
-    if ( my ($attr) = grep { $_->{name} eq 'Data Units Read' } @{$smartStats->{attributes}} )
-    {
-        $attr->{value} =~ /(\S+)\s\[/ or return { status => 500, msg => 'Unconsistent ATA read counter' };
-	my $value = $1;
-	$value =~ s/,//g;
-        $value = $sectorSize*$value;
-        $bytesRead = $value;
-    }
-    if ( my ($attr) = grep { $_->{name} eq 'Data Units Written' } @{$smartStats->{attributes}} )
-    {
-        $attr->{value} =~ /(\S+)\s\[/ or return { status => 500, msg => 'Unconsistent ATA write counter' };
-        my $value = $1;
-        $value =~ s/,//g;
-        $value = $sectorSize*$value;
-        $bytesWritten = $value;
-    }
-
 
     $fnret = getSataPhyErrorCounters(smartDisk => $smartDisk);
     if( ok($fnret) )
@@ -848,25 +896,23 @@ sub getSmartStatsATA
             "temperature" => $temperature,
             "highest-temperature" => $highestTemperature,
             "lowest-temperature" => $lowestTemperature,
-            #"logged-error-count" => $loggedErrorCount,
-            #"global-health" => $health,
-            #rawReport => $rawReport,
+            #"logged-error-count" => $loggedErrorCount, # in commonInfo
+            #"global-health" => $health, # in commonInfo
+            #rawReport => $rawReport, # in commonInfo
             %commonInfo
         },
     };
-
-
 }
 
 sub getSmartStatsAndAttributes
 {
     my %params = @_;
     my $smartDisk = $params{smartDisk};
-    if ($smartDisk =~ /nvd/)
-    {
-        $smartDisk =~ s/nvd/nvme/;
-    }
 
+    if ($smartDisk =~ /dev\/nvme(\d+)n(\d+)/)
+    {
+        $smartDisk = "/dev/nvme".$1;
+    }
     my $cmd = "timeout 15 smartctl -l devstat -A ".$smartDisk." 2>/dev/null";
     my @smartctl =  `$cmd`;
     my $status = $? >> 8;
@@ -884,7 +930,7 @@ sub getSmartStatsAndAttributes
         $line =~ s/\s+$//g;
         $line eq '' and next;
 
-        if ( !$in{smart} and $line =~ /=== START OF( READ)? SMART DATA SECTION ===/ )
+        if ( !$in{smart} and $line eq '=== START OF READ SMART DATA SECTION ===' )
         {
             $in{smart} = 1;
             next;
@@ -905,16 +951,6 @@ sub getSmartStatsAndAttributes
             $in{attributes} = 0;
             $in{statistics} = 1;
         }
-	#SMART/Health Information (NVMe Log 0x02, NSID 0xffffffff)
-	elsif ( $line =~ /SMART\/Health\sInformation\s\(NVMe\sLog/)
-	{
-            $in{attributes} = 1;
-	    $in{statistics} = 0;
-	}
-        # 184 End-to-End_Error        0x0033   100   100   090    Pre-fail  Always       -       0
-        # 187 Reported_Uncorrect      0x0032   100   100   000    Old_age   Always       -       0
-        # 190 Temperature_Case        0x0022   086   081   000    Old_age   Always       -       14 (Min/Max 13/20)
-        # 170 Unknown_Attribute       0x0003   100   100   ---    Pre-fail  Always       -       1310720
         elsif (
             $in{attributes} and
             $line =~ /^\s*
@@ -944,25 +980,10 @@ sub getSmartStatsAndAttributes
                 raw_value => $10,
             });
         }
-	elsif ( $in{attributes} and  $line =~ /(.*):\s*(.*)/)
-	{
-		push(@{$result{attributes}}, {
-		 id=> 'nan',
-		 name=>$1,
-		 value=>$2
-		});
-	}
-        #   1  =====  =                =  == General Statistics (rev 2) ==
-        # 0x01  =====  =               =  ===  == General Statistics (rev 2) ==
         elsif ( $in{statistics} and $line =~ /^\s*(\d+|0x[\da-f]{2})\s+={5}\s{2}=\s+=\s{2}==(?:=\s{2}==)?\s(.+)\s==$/ )
         {
             # Ok
         }
-        #   1  0x008  4               54  Lifetime Power-On Resets
-        #   1  0x018  6      48984500672  Logical Sectors Written
-        #   7  0x008  1                3~ Percentage Used Endurance Indicator
-        #   5  0x028  1               -1  Lowest Temperature
-        # 0x04  0x008  4               0  ---  Number of Reported Uncorrectable Errors
         elsif ( $in{statistics} and $line =~ /^\s*(\d+|0x[\da-f]{2})\s+(0x[0-9a-f]{3})\s+(\d+)\s+(-?\d+|-)\s*([CDN-]{3}|~|)\s+(.+)$/ )
         {
             if (length($5) <= 1)
@@ -1016,17 +1037,10 @@ sub getSmartStatsAndAttributes
     return { status => 100, value => \%result };
 }
 
-
 sub getSmartLoggedError
 {
     my %params = @_;
-
     my $smartDisk = $params{smartDisk};
-    if ($smartDisk =~ /nvd/)
-    {
-        $smartDisk =~ s/nvd/nvme/;
-    }
-
     my $cmd = "timeout 15 smartctl -l error,256 $smartDisk 2>/dev/null";
     my @smartLines = `$cmd`;
     my $last_status = $? >> 8;
@@ -1042,79 +1056,7 @@ sub getSmartLoggedError
             return { status => 500, msg => 'Unable to get smartctl logged errors' };
         }
     }
-
     my $smartReport = join( "\n", @smartLines );
-
-    # # SAS
-    # smartctl 5.41 2011-06-09 r3365 [x86_64-linux-3.10.23-xxxx-std-ipv6-64-rescue] (local build)
-    # Copyright (C) 2002-11 by Bruce Allen, http://smartmontools.sourceforge.net
-    #
-    #
-    # Error counter log:
-    #            Errors Corrected by           Total   Correction     Gigabytes    Total
-    #                ECC          rereads/    errors   algorithm      processed    uncorrected
-    #            fast | delayed   rewrites  corrected  invocations   [10^9 bytes]  errors
-    # read:          0   908758         0    908758       1235      23321.010           0
-    # write:         0  3411453         0   3411453          4      57956.539           0
-    # verify:        0    39612         0     39612       1591      12208.742           0
-    #
-    # Non-medium error count:        0
-
-    # SATA
-    # smartctl -l error /dev/sda
-    # smartctl 5.41 2011-06-09 r3365 [x86_64-linux-3.10.14-xxxx-std-ipv6-64] (local build)
-    # Copyright (C) 2002-11 by Bruce Allen, http://smartmontools.sourceforge.net
-    #
-    # === START OF READ SMART DATA SECTION ===
-    # SMART Error Log Version: 1
-    # ATA Error Count: 1
-    #     CR = Command Register [HEX]
-    #     FR = Features Register [HEX]
-    #     SC = Sector Count Register [HEX]
-    #     SN = Sector Number Register [HEX]
-    #     CL = Cylinder Low Register [HEX]
-    #     CH = Cylinder High Register [HEX]
-    #     DH = Device/Head Register [HEX]
-    #     DC = Device Command Register [HEX]
-    #     ER = Error register [HEX]
-    #     ST = Status register [HEX]
-    # Powered_Up_Time is measured from power on, and printed as
-    # DDd+hh:mm:SS.sss where DD=days, hh=hours, mm=minutes,
-    # SS=sec, and sss=millisec. It "wraps" after 49.710 days.
-    #
-    # Error 1 occurred at disk power-on lifetime: 2438 hours (101 days + 14 hours)
-    #   When the command that caused the error occurred, the device was in an unknown state.
-    #
-    #   After command completion occurred, registers were:
-    #   ER ST SC SN CL CH DH
-    #   -- -- -- -- -- -- --
-    #   04 51 00 00 00 00 00  Error: ABRT
-    #
-    #   Commands leading to the command that caused the error were:
-    #   CR FR SC SN CL CH DH DC   Powered_Up_Time  Command/Feature_Name
-    #   -- -- -- -- -- -- -- --  ----------------  --------------------
-    #   00 00 00 00 00 00 00 04  30d+09:26:18.794  NOP [Abort queued commands]
-    #   b0 d4 00 81 4f c2 00 00  30d+09:26:01.106  SMART EXECUTE OFF-LINE IMMEDIATE
-    #   b0 d1 01 01 4f c2 00 00  30d+09:26:01.092  SMART READ ATTRIBUTE THRESHOLDS [OBS-4]
-    #   b0 d0 01 00 4f c2 00 00  30d+09:26:01.080  SMART READ DATA
-    #   b0 da 00 00 4f c2 00 00  30d+09:26:01.072  SMART RETURN STATUS
-
-    # SATA no error
-    # root@rescue:~# smartctl -l error /dev/sda
-    # smartctl 5.41 2011-06-09 r3365 [x86_64-linux-3.10.23-xxxx-std-ipv6-64-rescue] (local build)
-    # Copyright (C) 2002-11 by Bruce Allen, http://smartmontools.sourceforge.net
-    #
-    # === START OF READ SMART DATA SECTION ===
-    # SMART Error Log Version: 1
-    # No Errors Logged
-
-    # NVME
-    # Error Information (NVMe Log 0x01, max 64 entries)
-    # Num   ErrCount  SQId   CmdId  Status  PELoc          LBA  NSID    VS
-    #   0          2     1       -  0x400c      -            0     -     -
-    #   1          1     1       -  0x400c      -            0     -     -
-    #   1         32     4  0x0203  0xc502  0x000    439549024     1     -
-    # ... (17 entries not shown)
 
     my %details = ();
     if ($smartReport =~ /^ATA Error Count:\s*(\d+)/m)
@@ -1171,17 +1113,14 @@ sub getSmartLoggedError
                 nsid      => $elems[7],
                 vs        => $elems[8],
             });
-
             $details{logged_error_count} += 1;
         }
-
         assert($details{logged_error_count} > 0);
     }
     else
     {
         return { status => 200, msg => 'Unhandled smartct -l error return' };
     }
-
     return { status => 100, value => \%details, details => $smartReport };
 }
 
@@ -1189,11 +1128,11 @@ sub getSataPhyErrorCounters
 {
     my %params = @_;
     my $smartDisk = $params{smartDisk};
-    if ($smartDisk =~ /nvd/)
-    {
-        $smartDisk =~ s/nvd/nvme/;
-    }
 
+    if ($smartDisk =~ /dev\/nvme(\d+)n(\d+)/)
+    {
+        $smartDisk = "/dev/nvme".$1;
+    }
     my $cmd = "timeout 15 smartctl -l sataphy $smartDisk 2>/dev/null";
     my @smartLines = `$cmd`;
     my $last_status = $? >> 8;
@@ -1210,17 +1149,10 @@ sub getSataPhyErrorCounters
         $line =~ s/\s+$//;
         $line eq '' and next;
 
-        # smartctl 6.5 2016-05-07 r4318 [x86_64-linux-3.14.77-mod-std-ipv6-64-rescue] (local build)
-        # Copyright (C) 2002-16, Bruce Allen, Christian Franke, www.smartmontools.org
-        # SATA Phy Event Counters (GP Log 0x11)
-        # ID      Size     Value  Description
-
         if (($line =~ /^(smartctl|Copyright|SATA Phy|ID\s+Size)/) and !@counters)
         {
             # Header
         }
-        # 0x0001  4            0  Command failed due to ICRC error
-        # 0x000d  4            0  Non-CRC errors within host-to-device FIS
         elsif ($line =~ /^(0x[0-9a-f]{4})\s+(\d+)\s+(\d+)\s+(.+)$/)
         {
             push(@counters, {
@@ -1235,277 +1167,269 @@ sub getSataPhyErrorCounters
             return { status => 500, msg => 'Unhandled line in smartctl return' };
         }
     }
-
     return { status => 100, value => \@counters };
 }
 
-
 sub getSgPaths
 {
-    my $cmd = "lsscsi -tg 2>/dev/null";
-    my @lines = `$cmd`;
-    my $last_status = $? >> 8;
-    if( $last_status != 0 )
+    my $fnret = execute("lsscsi -tg 2>/dev/null");
+    if ( $fnret->{status} != 100 )
     {
-        return { status => 500, msg => "Unable to gather sg paths" };
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "Unable to gather sg paths ".$fnret->{msg}};
     }
-
-    my %drives;
-
-    foreach my $line ( @lines )
+    else
     {
-        # lsi phyiscal disk in raid device
-        # [4:0:1:0]    disk    sas:0x78659942acbbe8b2          -          /dev/sg1
-
-        # lsi raid device (virtual)
-        # [4:1:8:0]    disk                                    /dev/sda   /dev/sg2
-
-        # lsi disk in JBOD mode
-        # [4:0:0:0]    disk    sas:0x78659942ace4d5b2          /dev/sda   /dev/sg0
-
-        if ( $line =~ /
-            disk\s+
-            sas:0x([0-9a-f]+)\s+
-            (\/dev\/sd[a-z]+|-)\s+
-            (\/dev\/sg\d+|)
-            /x)
+        my %drives;
+        foreach my $line ( @{$fnret->{value}} )
         {
-            ( $2 eq '-' ) and next;
-            $drives{$2} = {
-                sasAddress  => $1,
-                sdDrive     => $2,
-                sgDrive     => $3,
-            };
+            if ( $line =~ /
+                disk\s+
+                sas:0x([0-9a-f]+)\s+
+                (\/dev\/sd[a-z]+|-)\s+
+                (\/dev\/sg\d+|)
+                /x)
+            {
+                ( $2 eq '-' ) and next;
+                $drives{$2} = {
+                    sasAddress  => $1,
+                    sdDrive     => $2,
+                    sgDrive     => $3,
+                };
+            }
         }
+        return { status => 100, value => \%drives };
     }
-
-    return { status => 100, value => \%drives };
 }
 
 # ##################################
 # Sg logs subs
-
 sub getSupportedLogPages
 {
     my %params = @_;
-
     my $devPath = $params{devPath};
 
-    my $cmd = "sg_logs -x $devPath 2>/dev/null";
-    my @lines = `$cmd`;
-    my $status = $? >> 8;
-    if( $status )
+    my $fnret = execute("sg_logs -x $devPath 2>/dev/null");
+    if ( $fnret->{status} != 100 )
     {
-        return { status => 500, msg => 'unable to get sg logs supported pages' };
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "Unable to get sg logs pages ".$fnret->{msg}};
     }
-
-    my @pages = ();
-
-    foreach my $i ( 0 .. $#lines )
+    else
     {
-        my $line = $lines[$i];
-        $line    =~ s/^\s+$//;
-
-        # Supported log pages  [0x0]:
-        if ( $i == 0 )
+        my @pages = ();
+        foreach my $i ( 0 .. @{$fnret->value} )
         {
-            # Page name
+            my $line = $fnret->{value}[$i];
+            $line    =~ s/^\s+$//;
+            # Supported log pages  [0x0]:
+            if ( $i == 0 )
+            {
+                # Page name
+            }
+            #     0x00        Supported log pages
+            #     0x0d        Temperature
+            elsif ( $line =~ /^\s{4}(0x[\da-f]{2})\s+(.+)$/ )
+            {
+                push(@pages, {code => $1, desc => $2});
+            }
+            else
+            {
+                return { status => 500, msg => 'Unhandled sg_logs return' };
+            }
         }
-        #     0x00        Supported log pages
-        #     0x0d        Temperature
-        elsif ( $line =~ /^\s{4}(0x[\da-f]{2})\s+(.+)$/ )
-        {
-            push(@pages, {code => $1, desc => $2});
-        }
-        else
-        {
-            return { status => 500, msg => 'Unhandled sg_logs return' };
-        }
+        return { status => 100, value => \@pages };
     }
-    return { status => 100, value => \@pages };
 }
 
 sub getGenericLogPage
 {
     my %params = @_;
-
     my $devPath     = $params{devPath};
     my $page        = $params{page};
     my $stopOnValue = $params{stopOnValue};
 
-    my $cmd = "sg_logs -x --page $page $devPath";
-    my @lines = `$cmd`;
-    my $status = $? >> 8;
-    if( $status )
+    my $fnret = execute("sg_logs -x --page $page $devPath");
+    if ( $fnret->{status} != 100 )
     {
-        return { status => 500, msg => "Unable to get sg logs requested page" };
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "Unable to get sg logs requested page ".$fnret->{msg}};
     }
-    my $category   = '';
-    my %details    = ();
-    my $headerSeen = 0;
-
-    foreach my $i ( 0 .. $#lines )
+    else
     {
-        my $line = $lines[$i];
-        $line    =~ s/^\s+$//;
+        my @lines = @{$fnret->{value}};
+        my $category   = '';
+        my %details    = ();
+        my $headerSeen = 0;
 
-        # Read error counter page  [0x3]
-        if ( substr($line, 0, 1) ne ' ' and $line =~ /\[0x[0-9a-f]{1,2}\]$/ )
+        foreach my $i ( 0 .. $#lines )
         {
-            # Header
-            $headerSeen and return { status => 200, msg => 'Can not parse specified log page ('.$page.')' };
-            $headerSeen++;
+            my $line = $lines[$i];
+            $line    =~ s/^\s+$//;
+
+            # Read error counter page  [0x3]
+            if ( substr($line, 0, 1) ne ' ' and $line =~ /\[0x[0-9a-f]{1,2}\]$/ )
+            {
+                # Header
+                $headerSeen and return { status => 200, msg => 'Can not parse specified log page ('.$page.')' };
+                $headerSeen++;
+            }
+            elsif ( defined($stopOnValue) and ($line =~ $stopOnValue) )
+            {
+                # Stop on value reached, stop here
+                last;
+            }
+            #   Total times correction algorithm processed = 1418
+            #   Percentage used endurance indicator: 2%
+            elsif ( $line =~ /^\s{2}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
+            {
+                $details{$1} = $2;
+            }
+            #   Status parameters:
+            elsif ( $line =~ /^\s{2}([^\s][^=:]+):$/ )
+            {
+                $category = $1;
+                $details{$category} ||= {};
+            }
+            #     Accumulated power on minutes: 939513 [h:m  15658:33]
+            elsif ( $category and $line =~ /^\s{4}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
+            {
+                $details{$category}{$1} = $2;
+            }
+            else
+            {
+                return { status => 500, msg => 'Unhandled sg_logs return' };
+            }
         }
-        elsif ( defined($stopOnValue) and ($line =~ $stopOnValue) )
+
+        # Sanity check
+        if ( !$headerSeen )
         {
-            # Stop on value reached, stop here
-            last;
+            return { status => 500, msg => 'sg_logs return may have not been properly handled' };
         }
-        #   Total times correction algorithm processed = 1418
-        #   Percentage used endurance indicator: 2%
-        elsif ( $line =~ /^\s{2}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
-        {
-            $details{$1} = $2;
-        }
-        #   Status parameters:
-        elsif ( $line =~ /^\s{2}([^\s][^=:]+):$/ )
-        {
-            $category = $1;
-            $details{$category} ||= {};
-        }
-        #     Accumulated power on minutes: 939513 [h:m  15658:33]
-        elsif ( $category and $line =~ /^\s{4}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
-        {
-            $details{$category}{$1} = $2;
-        }
-        else
-        {
-            return { status => 500, msg => 'Unhandled sg_logs return' };
-        }
+
+        return { status => 100, value => \%details };
     }
-
-    # Sanity check
-    if ( !$headerSeen )
-    {
-        return { status => 500, msg => 'sg_logs return may have not been properly handled' };
-    }
-
-    return { status => 100, value => \%details };
 }
 
 sub getBackgroundScanResultsLogPage
 {
     my %params = @_;
-
     my $devPath = $params{devPath};
 
-    my $cmd = "sg_logs -x --page 0x15 $devPath 2>/dev/null";
-    my @lines = `$cmd`;
-    my $status = $? >> 8;
-    if( $status )
+    my $fnret = execute("sg_logs -x --page 0x15 $devPath 2>/dev/null");
+    if ( $fnret->{status} != 100 )
     {
-        return { status => 500, msg => 'Unable to get background scan page' };
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "Unable to get background scan page: ".$fnret->{msg}."\n"};
     }
-
-    my $category   = '';
-    my %details    = ();
-    my $headerSeen = 0;
-
-    foreach my $i ( 0 .. $#lines )
+    else
     {
-        my $line = $lines[$i];
-        $line    =~ s/^\s+$//;
+        my @lines = @{$fnret->{value}};
+        my $category   = '';
+        my %details    = ();
+        my $headerSeen = 0;
 
-        # Read error counter page  [0x3]
-        if ( substr($line, 0, 1) ne ' ' and $line =~ /\[0x[0-9a-f]{1,2}\]$/ )
+        foreach my $i ( 0 .. $#lines )
         {
-            # Header
-            $headerSeen and return { status => 200, msg => 'Can not parse specified log page (0x15)' };
-            $headerSeen++;
+            my $line = $lines[$i];
+            $line    =~ s/^\s+$//;
+
+            # Read error counter page  [0x3]
+            if ( substr($line, 0, 1) ne ' ' and $line =~ /\[0x[0-9a-f]{1,2}\]$/ )
+            {
+                # Header
+                $headerSeen and return { status => 200, msg => 'Can not parse specified log page (0x15)' };
+                $headerSeen++;
+            }
+            #   Total times correction algorithm processed = 1418
+            #   Percentage used endurance indicator: 2%
+            elsif ( $line =~ /^\s{2}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
+            {
+                $details{$1} = $2;
+            }
+            #   Status parameters:
+            elsif ( $line =~ /^\s{2}([^\s][^=:]+):$/ )
+            {
+                $category = $1;
+                $details{$category} ||= {};
+            }
+            #     Accumulated power on minutes: 939513 [h:m  15658:33]
+            elsif ( $category and $line =~ /^\s{4}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
+            {
+                $details{$category}{$1} = $2;
+            }
+            #   Medium scan parameter # 1 [0x1]
+            elsif ( $line =~ /^\s{2}Medium scan parameter #\s*(\d+)\s*\[0x[0-9a-f]+\]$/ )
+            {
+                # Start of scan results, not handled for now
+                last;
+            }
+            else
+            debug2: channel 0: window 993041 sent adjust 55535
+{
+                return { status => 500, msg => 'Unhandled sg_logs return' };
+            }
         }
-        #   Total times correction algorithm processed = 1418
-        #   Percentage used endurance indicator: 2%
-        elsif ( $line =~ /^\s{2}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
+
+        # Sanity check
+        if ( !$headerSeen )
         {
-            $details{$1} = $2;
+            return { status => 500, msg => 'sg_logs return may have not been properly handled' };
         }
-        #   Status parameters:
-        elsif ( $line =~ /^\s{2}([^\s][^=:]+):$/ )
+
+        if ( $details{'Status parameters'} and my $pohLine = $details{'Status parameters'}{'Accumulated power on minutes'} )
         {
-            $category = $1;
-            $details{$category} ||= {};
+            # 939513 [h:m  15658:33]
+            my ($poh) = $pohLine =~ /^\d+\s\[h:m\s+(\d+):(\d+)\]$/;
+            $details{'Status parameters'}{'Accumulated power on hours'} = $poh;
         }
-        #     Accumulated power on minutes: 939513 [h:m  15658:33]
-        elsif ( $category and $line =~ /^\s{4}([^\s][^=:]+)(?:\s=|:)\s(.+)$/ )
-        {
-            $details{$category}{$1} = $2;
-        }
-        #   Medium scan parameter # 1 [0x1]
-        elsif ( $line =~ /^\s{2}Medium scan parameter #\s*(\d+)\s*\[0x[0-9a-f]+\]$/ )
-        {
-            # Start of scan results, not handled for now
-            last;
-        }
-        else
-        {
-            return { status => 500, msg => 'Unhandled sg_logs return' };
-        }
+        return { status => 100, value => \%details };
     }
-
-    # Sanity check
-    if ( !$headerSeen )
-    {
-        return { status => 500, msg => 'sg_logs return may have not been properly handled' };
-    }
-
-    if ( $details{'Status parameters'} and my $pohLine = $details{'Status parameters'}{'Accumulated power on minutes'} )
-    {
-        # 939513 [h:m  15658:33]
-        my ($poh) = $pohLine =~ /^\d+\s\[h:m\s+(\d+):(\d+)\]$/;
-        $details{'Status parameters'}{'Accumulated power on hours'} = $poh;
-    }
-
-    return { status => 100, value => \%details };
 }
-
-
-# end sg_logs subs
-# ########################################
 
 sub getDmesg
 {
-    my @dmesg = `/sbin/dmesg -a | tail -n 15000`;
-    my $status = $? >> 8;
-    if( $status )
-    {
-        return { status => 500, msg => 'Unable to get dmesg' };
+    my $fnret = execute('/bin/dmesg -T | tail -n 15000');
+    if ( $fnret->{status} != 100 )
+    {   
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "dmesg error: ".$fnret->{msg}};
     }
-
+    else
+    {
+        my $dmesg = $fnret->{value};
+        # 2 checks
+        # check for allocation failed or kernel oops
+        my $results = $fnret->{value};
     my @filtered = ();
-
-    foreach my $line (@dmesg)
-    {
-        chomp $line;
-        if ( $line =~ /(I\/O|critical medium) error/
-                or $line =~ /Buffer I\/O error on device/
-                or $line =~ /Unhandled (error|sense) code/ )
+        foreach my $line (@{$dmesg})
         {
-            push @filtered, $line;
+            chomp $line;
+            if ( $line =~ /(I\/O|critical medium) error/
+                    or $line =~ /Buffer I\/O error on device/
+                    or $line =~ /Unhandled (error|sense) code/ )
+            {
+                push @filtered, $line;
+            }
+            if ($line =~ /allocation failed/i)
+            {
+                $server{'rtm.info.check.vm'}="True";
+            }
+            if ($line =~ /Oops/i)
+            {
+                $server{'rtm.info.check.oops'}="True";
+            }
         }
+        return { status => 100, value => \@filtered };
     }
-
-    return { status => 100, value => \@filtered };
-
 }
-
 
 sub countDmesgErrors
 {
     my %params = @_;
-
     my $diskName = $params{diskName};
     my @lines = @{$params{lines}};
-
     my $counter = 0;
 
     foreach my $line (@lines)
@@ -1517,75 +1441,71 @@ sub countDmesgErrors
             $counter++;
         }
     }
-
     return { status => 100, value => $counter };
 }
 
-
 sub iostatCounters
 {
-
     my %params = @_;
     my $diskName = $params{diskName} || return { status => 500, msg => "Missing diskName" };
 
-    my @lines = `iostat -d -x $diskName`;
-    my $status = $? >> 8;
-    if( $status )
+    my $fnret = execute("iostat -d -x $diskName");
+    if ( $fnret->{status} != 100 )
     {
-        return { status => 500, msg => 'Unable to get iostat' };
+        print $fnret->{msg}." \n";
+        return { status => 500, msg => "iostat error: ".$fnret->{msg}};
     }
-
-    my $counterLabelsLine = undef;
-    my $countersLine = undef;
-
-    foreach my $line (@lines)
+    else
     {
-        chomp $line;
-        if( $line =~ /^\s*device\s*:(.*)$/i )
+        my $counterLabelsLine = undef;
+        my $countersLine = undef;
+        my @lines = @{$fnret->{value}};
+
+        foreach my $line (@lines)
         {
-            $counterLabelsLine = $1;
-            chomp( $counterLabelsLine );
-            $counterLabelsLine =~ s/^\s*//;
-            $counterLabelsLine =~ s/\s*$//;
+            chomp $line;
+            if( $line =~ /^\s*device(?:\s*:|\s)(.*)$/i )
+            {
+                $counterLabelsLine = $1;
+                chomp( $counterLabelsLine );
+                $counterLabelsLine =~ s/^\s*//;
+                $counterLabelsLine =~ s/\s*$//;
+            }
+            elsif( $line =~ /^\s*$diskName\s(.*)$/ )
+            {
+                $countersLine = $1;
+                chomp( $countersLine );
+                $countersLine =~ s/^\s*//;
+                $countersLine =~ s/\s*$//;
+            }
         }
-        elsif( $line =~ /^\s*$diskName\s(.*)$/ )
+
+        if( !defined($counterLabelsLine) or !defined($countersLine) )
         {
-            $countersLine = $1;
-            chomp( $countersLine );
-            $countersLine =~ s/^\s*//;
-            $countersLine =~ s/\s*$//;
+            return { status => 500, msg => 'Unable to parse iostat' };
         }
+
+        my @fields = split /\s+/, $counterLabelsLine;
+        my @values = split /\s+/, $countersLine;
+
+        if( scalar(@fields) != scalar(@values) )
+        {
+            return { status => 500, msg => 'Unexpected iostat parsing: '.scalar(@fields).' != '.scalar(@values) };
+        }
+
+        my $counters = {};
+        for( my $i=0; $i<scalar(@fields); $i++)
+        {
+            $counters->{$fields[$i]} = $values[$i];
+        }
+
+        return { status => 100, value => $counters };
     }
-
-    if( !defined($counterLabelsLine) or !defined($countersLine) )
-    {
-        return { status => 500, msg => 'Unable to parse iostat' };
-    }
-
-    my @fields = split /\s+/, $counterLabelsLine;
-    my @values = split /\s+/, $countersLine;
-
-    if( scalar(@fields) != scalar(@values) )
-    {
-        return { status => 500, msg => 'Unexpected iostat parsing: '.scalar(@fields).' != '.scalar(@values) };
-    }
-
-    my $counters = {};
-
-    for( my $i=0; $i<scalar(@fields); $i++)
-    {
-        $counters->{$fields[$i]} = $values[$i];
-    }
-
-    return { status => 100, value => $counters };
-
 }
-
 
 sub getSmartStatsSAS
 {
     my %params = @_;
-
     my $device = $params{sgDisk} || return { status => 201, msg => 'Missing argument' };
     my $smartDisk = $params{smartDisk} || return { status => 201, msg => 'Missing argument' };
 
@@ -1614,7 +1534,6 @@ sub getSmartStatsSAS
     if ( grep { $_->{code} eq '0x02' } @supportedPages )
     {
         my $fnret = getGenericLogPage(devPath => $device, page => '0x02');
-
         ok($fnret) or return $fnret;
 
         $bytesWritten = $fnret->{value}->{'Total bytes processed'};
@@ -1627,13 +1546,12 @@ sub getSmartStatsSAS
         {
             $eccUncorrectedErrs = $eccErrsU;
         }
-
+        
         if( defined($eccErrsC) and $eccErrsC =~ /^\d+\z/  )
         {
             $eccCorrectedErrs = $eccErrsC;
         }
     }
-
 
     # SSD specific page
     if ( grep { $_->{code} eq '0x11' } @supportedPages )
@@ -1678,7 +1596,8 @@ sub getSmartStatsSAS
 
             if( defined($eccErrsU) and $eccErrsU =~ /^\d+\z/ )
             {
-                if( $eccUncorrectedErrs == -1 ) {
+                if( $eccUncorrectedErrs == -1 )
+                {
                     $eccUncorrectedErrs = $eccErrsU;
                 }
                 else
@@ -1689,7 +1608,8 @@ sub getSmartStatsSAS
 
             if( defined($eccErrsC) and $eccErrsC =~ /^\d+\z/  )
             {
-                if( $eccCorrectedErrs == -1 ) {
+                if( $eccCorrectedErrs == -1 )
+                {
                     $eccCorrectedErrs = $eccErrsC;
                 }
                 else
@@ -1697,7 +1617,6 @@ sub getSmartStatsSAS
                     $eccCorrectedErrs += $eccErrsC;
                 }
             }
-
         }
     }
 
@@ -1775,82 +1694,324 @@ sub getSmartStatsSAS
             "temperature" => $temperature,
             "highest-temperature" => $highestTemperature,
             "lowest-temperature" => $lowestTemperature,
-            #"logged-error-count" => $loggedErrorCount,
-            #"global-health" => $health,
-            #rawReport => $rawReport,
             %commonInfo
         },
     };
 }
 
-sub completeCpuInfo
+sub getNvmeSmartStatistics
 {
-    # Purpose of this
-    my %cpuInfo = ( f_mhz => -1, fmax_mhz => -1, fmin_mhz => -1 );
-    my @info = `dmidecode -t processor`;
-
-    my $status = $? >> 8;
-    if( $status )
+    my %params = @_;
+    my $smartDisk = $params{smartDisk} || return { status => 201, msg => "Missing smartDisk param" };
+    if ($smartDisk =~ /nvme(\d+)n(\d+)/)
     {
-        return { status => 500, msg => "dmidecode error: $!" };
+        $smartDisk = "/dev/nvme".$1;
     }
-
-    $cpuInfo{architecture} = `uname -p`;
-    $cpuInfo{sockets} = `sysctl hw dev.cpu | grep ncpu | sed -e "s/hw.ncpu: //"`;
-    $cpuInfo{model} = `sysctl hw dev.cpu | grep hw.model | sed -e "s/hw.model: //"`;
-
-    foreach my $line (@info) {
-        chomp $line;
-        if ($line =~ /^\s*Core Count[^:]*:[^\d]*(\d+)[^\d]*$/i)
-        {
-            my $field = $1;
-            $field =~ s/^\s*//;
-            $field =~ s/\s*$//;
-
-            $cpuInfo{cores} = $field;
-        }
-        elsif ($line =~ /^\s*Thread Count[^:]*:[^\d]*(\d+)[^\d]*$/i)
-        {
-            my $field = $1;
-            $field =~ s/^\s*//;
-            $field =~ s/\s*$//;
-
-            $cpuInfo{threads} = $field;
-        }
-        elsif ($line =~ /\s*Current Speed\s*MHz[^:]*:[^\d]*(\d+)[^\d]*/i )
-        {
-            my $field = $1;
-            $field =~ s/^\s*//;
-            $field =~ s/\s*$//;
-
-            $cpuInfo{f_mhz} = $field;
-        }
-        elsif ($line =~ /\s*Max\s*speed\s*MHz[^:]*:[^\d]*(\d+)[^\d]*/i )
-        {
-            my $field = $1;
-            $field =~ s/^\s*//;
-            $field =~ s/\s*$//;
-
-            $cpuInfo{fmax_mhz} = $field;
-        }
-        elsif ($line =~ /\s*Cpu\s*min\s*MHz[^:]*:[^\d]*(\d+)[^\d]*/i )
-        {
-            my $field = $1;
-            $field =~ s/^\s*//;
-            $field =~ s/\s*$//;
-
-            $cpuInfo{fmin_mhz} = $field;
-        }
-    }
-
-    if( defined($cpuInfo{sockets}) and defined($cpuInfo{cores}) and defined($cpuInfo{threads}) )
+    my $cmd = "timeout 15 smartctl -A $smartDisk 2>/dev/null";
+    my @smartLines = `$cmd`;
+    my $last_status = $? >> 8;
+    my $smart_status = $last_status & 7;
+    if( $smart_status != 0 )
     {
-        $cpuInfo{cpu_no} = $cpuInfo{sockets} * $cpuInfo{cores} * $cpuInfo{threads};
+        return { status => 500, msg => 'Unable to get smartctl info for nvme disk '.$smartDisk };
     }
 
-    return { status => 100, value => \%cpuInfo };
+    my %result = ();
+    my $in     = 0;
+
+    foreach my $line (@smartLines)
+    {
+        $line =~ s/\s+$//g;
+        $line =~ s/^\s+//g;
+        $line eq '' and next;
+
+        if ($line eq '=== START OF SMART DATA SECTION ===')
+        {
+            $in++;
+        }
+        # SMART/Health Information (NVMe Log 0x02, NSID 0xffffffff)
+        # SMART/Health Information (NVMe Log 0x02)
+        elsif ($line =~ /^SMART\/Health Information \(NVMe Log 0x02(?:, NSID (0x[a-f0-9]+))?\)$/)
+        {
+            # Not used
+        }
+        # Temperature:                        45 Celsius
+        # Power On Hours:                     7,262
+        elsif ($in and $line =~ /^([^:]+):\s+([^\s].*)$/)
+        {
+            $result{$1} = $2;
+        }
+        elsif (!$in)
+        {
+            # Header
+        }
+        else
+        {
+            Logger::debug($line);
+            return { status => 500, msg => 'Unhandled line in smartctl return' };
+        }
+    }
+
+    $in or return {
+        status => 500,
+        msg    => 'Failed to parse smartctl return',
+    };
+
+    return { status => 100, value => \%result };
 }
 
+sub getSmartStatsNvme {
+    my %params = @_;
+    my $smartDisk = $params{smartDisk}  || return { status => 201, msg => 'Missing argument' };
 
+    my $bytesWritten   = undef;
+    my $bytesRead      = -1;
+    my $percentageUsed = undef;
+    my $powerOnHours   = undef;
+    my $linkFailures       = -1;
+    my $powerCycles    = -1;
+    my $eccCorrectedErrs = -1;
+    my $eccUncorrectedErrs = -1;
+    my $reallocSectors = -1;
+    my $commandTimeout = -1;
+    my $offlineUncorrectable = -1;
+    my $temperature = -1;
+    my $highestTemperature = -1;
+    my $lowestTemperature = -1;
+    my $pendingSectors = -1;
+    my $unsafeShutdowns = -1;
+    my $criticalStatus = -1;
 
-hash_walk(\%server, [], \&print_keys_and_value);
+    my $fnret = getNvmeSmartStatistics(smartDisk => $smartDisk);
+    ok($fnret) or return $fnret;
+
+    my $smartStats     = $fnret->{value};
+
+    if ( defined($smartStats->{'Data Units Written'}) )
+    {
+        $bytesWritten = $smartStats->{'Data Units Written'};
+
+        # 27,745,697 [14.2 TB]
+        # last part is optional when drive is brand new
+        $bytesWritten =~ s/\s+\[[^\]]+\]$//;
+        $bytesWritten =~ s/,//g;
+        $bytesWritten =~ /^\d+\z/ or return {status => 500, msg => 'Unconsistent NVME write counter'};
+        $bytesWritten *= (512*1000);
+    }
+
+    ## Not mandatory value, so if no value found, leave it undef
+    if (defined($smartStats->{'Data Units Read'}))
+    {
+        $bytesRead = $smartStats->{'Data Units Read'};
+
+        # 27,745,697 [14.2 TB]
+        # last part is optional when drive is brand new
+        $bytesRead =~ s/\s+\[[^\]]+\]$//;
+        $bytesRead =~ s/,//g;
+        if( $bytesRead !~ /^\d+\z/ )
+        {
+            $bytesRead = -1;
+        }
+        else
+        {
+            # According to smartctl source, always 512k and see here too:
+            # https://www.seagate.com/www-content/product-content/ssd-fam/nvme-ssd/_shared/docs/100765362c.pdf
+            # note, 1000, not 2**10
+            $bytesRead *= (512*1000);
+        }
+    }
+
+    if (defined($smartStats->{'Percentage Used'}))
+    {
+        $percentageUsed = $smartStats->{'Percentage Used'};
+        $percentageUsed =~ s/%$//;
+        $percentageUsed =~ /^\d+$/ or return {status => 500, msg => 'Unconsistent NVME MWI counter'};
+    }
+
+    if (defined($smartStats->{'Power On Hours'}))
+    {
+        $powerOnHours = $smartStats->{'Power On Hours'};
+        $powerOnHours =~ s/,//g;
+        $powerOnHours =~ /^\d+$/ or return {status => 500, msg => 'Unconsistent NVME POH counter'};
+    }
+
+    if (defined($smartStats->{'Power Cycles'}))
+    {
+        $powerCycles = $smartStats->{'Power Cycles'};
+        $powerCycles =~ s/,//g;
+        if( $powerCycles !~ /^\d+$/ )
+        {
+            $powerCycles = -1;
+        }
+    }
+
+    if (defined($smartStats->{'Media and Data Integrity Errors'}))
+    {
+        $eccUncorrectedErrs = $smartStats->{'Media and Data Integrity Errors'};
+        $eccUncorrectedErrs =~ s/,//g;
+        if( $eccUncorrectedErrs !~ /^\d+$/ )
+        {
+            $eccUncorrectedErrs = -1;
+        }
+    }
+
+    if ( defined($smartStats->{'Critical Warning'}))
+    {
+        $criticalStatus = $smartStats->{'Critical Warning'};
+        $criticalStatus = hex $criticalStatus;
+    }
+
+    if ( defined($smartStats->{'Temperature'}))
+    {
+        $temperature = $smartStats->{'Temperature'};
+        $temperature =~ s/,//g;
+        if( $temperature =~ /(\d+)\s*C/ )
+        {
+            $temperature = $1;
+        }
+        else
+        {
+            $temperature = -1;
+        }
+    }
+
+    if ( defined($smartStats->{'Unsafe Shutdowns'}))
+    {
+        $unsafeShutdowns = $smartStats->{'Unsafe Shutdowns'};
+        $unsafeShutdowns =~ s/,//g;
+        if( $unsafeShutdowns !~ /\d+/ )
+        {
+            $unsafeShutdowns = -1;
+        }
+    }
+
+    my %commonInfo = ();
+    if( $smartDisk )
+    {
+        $fnret = getSmartCommonInfo(smartDisk => $smartDisk);
+        if( ok($fnret) )
+        {
+            %commonInfo = %{$fnret->{value}}
+        }
+    }
+
+    return {
+        status => 100,
+        value  => {
+            "bytes-written"   => $bytesWritten,
+            "bytes-read"      => $bytesRead,
+            "percentage-used" => $percentageUsed || 0,
+            "power-on-hours"   => $powerOnHours,
+            "power-cycles" => $powerCycles,
+            "reported-corrected" => $eccCorrectedErrs,
+            "reported-uncorrect" => $eccUncorrectedErrs,
+            "reallocated-sector-count" => $reallocSectors,
+            "current-pending-sector" => $pendingSectors,
+            "offline-uncorrectable" => $offlineUncorrectable,
+            "command-timeout" => $commandTimeout,
+            "link-failures" => $linkFailures,
+            "temperature" => $temperature,
+            "highest-temperature" => $highestTemperature,
+            "lowest-temperature" => $lowestTemperature,
+            #"logged-error-count" => $loggedErrorCount,
+            #"global-health" => $health,
+            #rawReport => $rawReport,
+            %commonInfo,
+            # specific to nvme
+            "critical-warning" => $criticalStatus,
+            "unsafe-shutdowns" => $unsafeShutdowns
+        },
+    };
+}
+
+sub ok
+{
+    my $arg = shift;
+    if ( ref $arg eq 'HASH' and $arg->{status} eq 100 )
+    {
+        return 1;
+    }
+    elsif (ref $arg eq 'HASH' and $arg->{status} eq 500 and defined($arg->{msg}))
+    {
+        print $arg->{msg};
+    }
+    return 0;
+}
+
+sub execute
+{
+    my ($bin, @args) = @_;
+    defined($bin) or return { status => 201, msg => 'No binary specified (execute)' };
+
+    my ($in, $out, $pid);
+    eval { $pid = IPC::Open3::open3($in, $out, $out, $bin, @args)}; warn $@ if $@;
+    
+    $pid or return { status => 500, msg => 'Failed to fork : '.$! };
+
+    local $/;
+
+    my $stdout = <$out>;
+    my $ret    = waitpid($pid, 0);
+    my $status = ($? >> 8);
+
+    close($in);
+    close($out);
+    my @stdout = split(/\n/, $stdout);
+    if ($ret != $pid)
+    {
+        return { status => 500, msg => 'Invalid fork return (waitpid)', value => $stdout };
+    }
+    elsif ($status != 0)
+    {
+        return { status => 500, msg => "Binary ".$bin." exited on a non-zero status (".$status.")\n", value => $stdout };
+    }
+    else
+    {
+        # Ok
+    }
+    return { status => 100, value => \@stdout };
+}
+
+sub hash_walk {
+    my ($hash, $key_list, $callback) = @_;
+    while (my ($key, $value) = each (%$hash))
+    {
+        $key =~ s/^\s+|\s+$//g;
+        push @$key_list, $key;
+        if (ref($value) eq 'HASH')
+        {
+            hash_walk($value,$key_list,$callback)
+        }
+        else
+        {
+            $callback->($key, $value, $key_list);
+        }
+        pop @$key_list;
+    }
+}
+
+sub print_keys_and_value {
+    my ($k, $v, $key_list) = @_;
+    if (defined($v))
+    {
+        $v =~ s/^\s+|\s+$//g;
+    }
+    my $key;
+    foreach (@$key_list)
+    {
+        if ($key)
+        {
+            $key = $key.".".$_;
+        }
+        else
+        {
+            $key = $key || "";
+            $key = $key.$_;
+        }
+    }
+    if (defined($key) and defined($v))
+    {
+        print "{\"metric\":\"$key\",\"timestamp\":".time.",\"value\":\"".$v."\"}\n";
+    }
+}
+
