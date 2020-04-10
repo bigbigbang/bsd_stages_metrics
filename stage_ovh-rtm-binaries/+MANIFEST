@@ -1,5 +1,5 @@
 name: ovh-rtm-binaries
-version: "1.0.0-1"
+version: "1.0.1-1"
 origin: sysutils/ovh-rtm-binaries
 comment: "ovh real time monitoring. This package provide OVH Real Times Monitoring scripts"
 desc: "ovh real time monitoring. This package provide OVH Real Times Monitoring scripts"
@@ -42,5 +42,10 @@ prefix: /
     "pciutils" : {
         "version": "*",
         "origin": "*"
-    }
+    },
+    "p5-Filesys-Df" : {
+        "version": "0.92_1",
+        "origin": "devel/p5-Filesys-Df"
+    },
 }
+
